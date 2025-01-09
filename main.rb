@@ -1,38 +1,34 @@
 require 'ffi-portaudio'
-require 'io/console'
+require 'unimidi'
+require 'yaml'
 
 SAMPLE_RATE = 44100
 BUFFER_SIZE = 256
-DEFAULT_FREQUENCY = 440.0  # A4
 AMPLITUDE = 0.5
 
 # 音階管理クラス
 class Note
-  BASE_FREQUENCY = 440.0 # A4
+  BASE_FREQUENCY = 440.0
   NOTE_NAMES = %w[C C# D D# E F F# G G# A A# B].freeze
 
   def initialize
-    @semitone = 0 # A4を基準とした半音差
+    @semitone = 0
   end
 
   def frequency
     BASE_FREQUENCY * (2 ** (@semitone / 12.0))
   end
 
+  def set_by_midi_note(midi_note)
+    @semitone = midi_note - 69 # MIDIノート69がA4
+  end
+
   def name
-    NOTE_NAMES[(@semitone + 9) % 12] # C=0, A=9（モジュロ演算でループ）
+    NOTE_NAMES[(@semitone + 9) % 12]
   end
 
   def octave
-    4 + ((@semitone + 9) / 12) # A4を基準にオクターブを計算
-  end
-
-  def increment
-    @semitone += 1
-  end
-
-  def decrement
-    @semitone -= 1
+    4 + ((@semitone + 9) / 12)
   end
 
   def display
@@ -50,7 +46,7 @@ class Oscillator
     @amplitude = amplitude
     @phase = 0.0
     update_delta
-    @waveform = :sine # デフォルトはサイン波
+    @waveform = :sine
   end
 
   def frequency=(new_frequency)
@@ -69,20 +65,15 @@ class Oscillator
   end
 
   def generate_sample
-    case @waveform
-    when :sine
-      sample = Math.sin(@phase)
-    when :sawtooth
-      sample = 2.0 * (@phase / (2.0 * Math::PI)) - 1.0
-    when :triangle
-      sample = 2.0 * (2.0 * (@phase / (2.0 * Math::PI) - 0.5).abs) - 1.0
-    when :pulse
-      sample = @phase < Math::PI ? 1.0 : -1.0
-    when :square
-      sample = @phase < Math::PI ? 0.5 : -0.5
-    else
-      sample = 0.0
-    end
+    sample =
+      case @waveform
+      when :sine then Math.sin(@phase)
+      when :sawtooth then 2.0 * (@phase / (2.0 * Math::PI)) - 1.0
+      when :triangle then 2.0 * (2.0 * (@phase / (2.0 * Math::PI) - 0.5).abs) - 1.0
+      when :pulse then @phase < Math::PI ? 1.0 : -1.0
+      when :square then @phase < Math::PI ? 0.5 : -0.5
+      else 0.0
+      end
     @phase += @delta
     @phase -= 2.0 * Math::PI if @phase > 2.0 * Math::PI
     sample * @amplitude
@@ -115,58 +106,56 @@ class AudioStream < FFI::PortAudio::Stream
   end
 end
 
-def monitor_keyboard(generator, note)
+# MIDI信号監視スレッド
+def monitor_midi_signals(generator, note, config)
   Thread.new do
+    midi_input = UniMIDI::Input.use(config['midi_device']['index'])
+    puts "Listening for MIDI signals from #{midi_input.name}..."
     loop do
-      case STDIN.getch
-      when 's'
-        generator.waveform = :sine
-        puts "Waveform changed to: Sine Wave"
-      when 'n'
-        generator.waveform = :sawtooth
-        puts "Waveform changed to: Sawtooth Wave"
-      when 't'
-        generator.waveform = :triangle
-        puts "Waveform changed to: Triangle Wave"
-      when 'p'
-        generator.waveform = :pulse
-        puts "Waveform changed to: Pulse Wave"
-      when 'k'
-        generator.waveform = :square
-        puts "Waveform changed to: Square Wave"
-      when "\e"
-        if STDIN.getch == '['
-          case STDIN.getch
-          when 'A' # ↑キー
-            note.increment
-            generator.frequency = note.frequency
-            puts "Note changed to: #{note.display}"
-          when 'B' # ↓キー
-            note.decrement
-            generator.frequency = note.frequency
-            puts "Note changed to: #{note.display}"
+      midi_input.gets.each do |message|
+        data = message[:data]
+        next if data[0] == 254 # Active Sensing を無視
+
+        case data[0] & 0xF0
+        when 0x90 # Note On
+          midi_note = data[1]
+          velocity = data[2]
+          if velocity > 0
+            if (config['keyboard']['note_range']['start']..config['keyboard']['note_range']['end']).include?(midi_note)
+              # 鍵盤で音を鳴らす
+              note.set_by_midi_note(midi_note)
+              generator.frequency = note.frequency
+              puts "Note On: #{note.display}"
+            elsif config['switches'].key?(midi_note.to_s)
+              # スイッチで波形を変更
+              generator.waveform = config['switches'][midi_note.to_s].to_sym
+              puts "Waveform changed to: #{generator.waveform.capitalize}"
+            end
           end
+        when 0x80 # Note Off
+          # 必要に応じてNote Offを処理
         end
-      when "\u0003" # Ctrl+Cで終了
-        exit
       end
     end
   end
 end
 
+# メイン処理
 FFI::PortAudio::API.Pa_Initialize
 
 begin
+  config = YAML.load_file('midi_config.yml')
   note = Note.new
   generator = Oscillator.new(note.frequency, SAMPLE_RATE, AMPLITUDE)
   stream = AudioStream.new(generator, SAMPLE_RATE, BUFFER_SIZE)
 
-  puts "Playing sound. Press keys to control:"
-  puts "  [s] Sine, [n] Sawtooth, [t] Triangle, [p] Pulse, [k] Square"
-  puts "  [↑] Higher note, [↓] Lower note"
-  monitor_keyboard(generator, note)
+  puts "Playing sound. Use keyboard or MIDI to control:"
+  puts "  Keyboard: [s] Sine, [n] Sawtooth, [t] Triangle, [p] Pulse, [k] Square"
+  puts "  Keyboard: [↑] Higher note, [↓] Lower note"
+  puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
+  monitor_midi_signals(generator, note, config)
 
-  sleep # 音声再生中（無限ループで待機）
+  sleep
 ensure
   stream&.close
   FFI::PortAudio::API.Pa_Terminate
