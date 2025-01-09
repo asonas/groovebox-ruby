@@ -40,28 +40,46 @@ end
 class Oscillator
   attr_accessor :waveform
 
-  def initialize(frequency, sample_rate, amplitude)
-    @frequency = frequency
+  def initialize(sample_rate, amplitude)
     @sample_rate = sample_rate
     @amplitude = amplitude
     @phase = 0.0
-    update_delta
     @waveform = :sine
+    @active_notes = {} # 押されているノートの状態を管理
+    update_frequency
   end
 
-  def frequency=(new_frequency)
-    @frequency = new_frequency
-    update_delta
+  def note_on(note, frequency)
+    @active_notes[note] = frequency
+    update_frequency
+  end
+
+  def note_off(note)
+    @active_notes.delete(note)
+    update_frequency
   end
 
   def generate(buffer_size)
-    Array.new(buffer_size) { generate_sample }
+    if @active_notes.empty?
+      Array.new(buffer_size, 0.0) # ノートが押されていない場合は無音
+    else
+      Array.new(buffer_size) { generate_sample }
+    end
   end
 
   private
 
+  def update_frequency
+    if @active_notes.empty?
+      @frequency = nil
+    else
+      @frequency = @active_notes.values.last # 最も最近のノートの周波数を使用
+      update_delta
+    end
+  end
+
   def update_delta
-    @delta = 2.0 * Math::PI * @frequency / @sample_rate
+    @delta = 2.0 * Math::PI * @frequency / @sample_rate if @frequency
   end
 
   def generate_sample
@@ -122,18 +140,20 @@ def monitor_midi_signals(generator, note, config)
           velocity = data[2]
           if velocity > 0
             if (config['keyboard']['note_range']['start']..config['keyboard']['note_range']['end']).include?(midi_note)
-              # 鍵盤で音を鳴らす
-              note.set_by_midi_note(midi_note)
-              generator.frequency = note.frequency
-              puts "Note On: #{note.display}"
+              frequency = 440.0 * (2 ** ((midi_note - 69) / 12.0))
+              generator.note_on(midi_note, frequency)
+              puts "Note On: #{Note::NOTE_NAMES[(midi_note % 12)]} (#{frequency.round(2)} Hz)"
             elsif config['switches'].key?(midi_note.to_s)
-              # スイッチで波形を変更
               generator.waveform = config['switches'][midi_note.to_s].to_sym
               puts "Waveform changed to: #{generator.waveform.capitalize}"
             end
           end
-        when 0x80 # Note Off
-          # 必要に応じてNote Offを処理
+        when 0x80, 0x90 # Note Off or Note On with velocity 0
+          midi_note = data[1]
+          if (config['keyboard']['note_range']['start']..config['keyboard']['note_range']['end']).include?(midi_note)
+            generator.note_off(midi_note)
+            puts "Note Off: #{Note::NOTE_NAMES[(midi_note % 12)]}"
+          end
         end
       end
     end
@@ -145,15 +165,12 @@ FFI::PortAudio::API.Pa_Initialize
 
 begin
   config = YAML.load_file('midi_config.yml')
-  note = Note.new
-  generator = Oscillator.new(note.frequency, SAMPLE_RATE, AMPLITUDE)
+  generator = Oscillator.new(SAMPLE_RATE, AMPLITUDE)
   stream = AudioStream.new(generator, SAMPLE_RATE, BUFFER_SIZE)
 
-  puts "Playing sound. Use keyboard or MIDI to control:"
-  puts "  Keyboard: [s] Sine, [n] Sawtooth, [t] Triangle, [p] Pulse, [k] Square"
-  puts "  Keyboard: [↑] Higher note, [↓] Lower note"
+  puts "Playing sound. Use MIDI to control:"
   puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
-  monitor_midi_signals(generator, note, config)
+  monitor_midi_signals(generator, nil, config)
 
   sleep
 ensure
