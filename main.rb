@@ -36,16 +36,76 @@ class Note
   end
 end
 
+class VCF
+  attr_accessor :low_pass_cutoff, :high_pass_cutoff
+
+  def initialize(sample_rate)
+    @sample_rate = sample_rate
+    @low_pass_cutoff = 1000.0 # 初期ローパスカットオフ周波数
+    @high_pass_cutoff = 100.0 # 初期ハイパスカットオフ周波数
+    reset_filters
+  end
+
+  def apply(input)
+    low_pass(high_pass(input))
+  end
+
+  def low_pass_cutoff=(new_frequency)
+    @low_pass_cutoff = [[new_frequency, 20.0].max, @sample_rate / 2.0].min
+    update_low_pass_alpha
+  end
+
+  def high_pass_cutoff=(new_frequency)
+    @high_pass_cutoff = [[new_frequency, 20.0].max, @sample_rate / 2.0].min
+    update_high_pass_alpha
+  end
+
+  private
+
+  def reset_filters
+    @low_pass_prev_output = 0.0
+    @high_pass_prev_input = 0.0
+    @high_pass_prev_output = 0.0
+    update_low_pass_alpha
+    update_high_pass_alpha
+  end
+
+  def update_low_pass_alpha
+    rc = 1.0 / (2.0 * Math::PI * @low_pass_cutoff)
+    @low_pass_alpha = rc / (rc + 1.0 / @sample_rate)
+  end
+
+  def update_high_pass_alpha
+    rc = 1.0 / (2.0 * Math::PI * @high_pass_cutoff)
+    @high_pass_alpha = rc / (rc + 1.0 / @sample_rate)
+  end
+
+  def low_pass(input)
+    output = @low_pass_alpha * input + (1 - @low_pass_alpha) * @low_pass_prev_output
+    @low_pass_prev_output = output
+    output
+  end
+
+  def high_pass(input)
+    output = (1 - @high_pass_alpha) * (@high_pass_prev_output + input - @high_pass_prev_input)
+    @high_pass_prev_input = input
+    @high_pass_prev_output = output
+    output
+  end
+end
+
 # 波形生成器クラス（VCO）
 class Oscillator
-  attr_accessor :waveform
+  attr_accessor :waveform, :active
+  attr_reader :vcf
 
   def initialize(sample_rate, amplitude)
     @sample_rate = sample_rate
     @amplitude = amplitude
     @phase = 0.0
-    @waveform = :sine
-    @active_notes = {} # 押されているノートの状態を管理
+    @waveform = :sawtooth
+    @active_notes = {}
+    @vcf = VCF.new(sample_rate) # VCFインスタンスを初期化
     update_frequency
   end
 
@@ -61,9 +121,9 @@ class Oscillator
 
   def generate(buffer_size)
     if @active_notes.empty?
-      Array.new(buffer_size, 0.0) # ノートが押されていない場合は無音
+      Array.new(buffer_size, 0.0)
     else
-      Array.new(buffer_size) { generate_sample }
+      Array.new(buffer_size) { @vcf.apply(generate_sample) }
     end
   end
 
@@ -73,7 +133,7 @@ class Oscillator
     if @active_notes.empty?
       @frequency = nil
     else
-      @frequency = @active_notes.values.last # 最も最近のノートの周波数を使用
+      @frequency = @active_notes.values.last
       update_delta
     end
   end
@@ -153,6 +213,17 @@ def monitor_midi_signals(generator, note, config)
           if (config['keyboard']['note_range']['start']..config['keyboard']['note_range']['end']).include?(midi_note)
             generator.note_off(midi_note)
             puts "Note Off: #{Note::NOTE_NAMES[(midi_note % 12)]}"
+          end
+        when 0xB0 # Control Change
+          control = data[1]
+          value = data[2]
+          cutoff_change = value == 127 ? 10 : -10
+          if control == 71
+            generator.vcf.low_pass_cutoff += cutoff_change
+            puts "VCF Low Pass Cutoff: #{generator.vcf.low_pass_cutoff.round(2)} Hz"
+          elsif control == 74
+            generator.vcf.high_pass_cutoff += cutoff_change
+            puts "VCF High Pass Cutoff: #{generator.vcf.high_pass_cutoff.round(2)} Hz"
           end
         end
       end
