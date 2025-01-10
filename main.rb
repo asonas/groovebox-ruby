@@ -102,61 +102,53 @@ class Oscillator
   def initialize(sample_rate, amplitude)
     @sample_rate = sample_rate
     @amplitude = amplitude
-    @phase = 0.0
     @waveform = :sawtooth
     @active_notes = {}
     @vcf = VCF.new(sample_rate) # VCFインスタンスを初期化
-    update_frequency
   end
 
   def note_on(note, frequency)
-    @active_notes[note] = frequency
-    update_frequency
+    @active_notes[note] = { frequency: frequency, phase: 0.0 }
   end
 
   def note_off(note)
     @active_notes.delete(note)
-    update_frequency
   end
 
   def generate(buffer_size)
-    if @active_notes.empty?
-      Array.new(buffer_size, 0.0)
-    else
-      Array.new(buffer_size) { @vcf.apply(generate_sample) }
+    return Array.new(buffer_size, 0.0) if @active_notes.empty?
+
+    # 各ノートの波形を合成
+    samples = Array.new(buffer_size, 0.0)
+    @active_notes.each_value do |note_data|
+      samples = samples.zip(generate_wave(note_data, buffer_size)).map { |s1, s2| s1 + s2 }
     end
+
+    # 平均化して振幅を保つ
+    samples.map! { |sample| @vcf.apply(sample) * (@amplitude / @active_notes.size) }
   end
 
   private
 
-  def update_frequency
-    if @active_notes.empty?
-      @frequency = nil
-    else
-      @frequency = @active_notes.values.last
-      update_delta
+  def generate_wave(note_data, buffer_size)
+    delta = 2.0 * Math::PI * note_data[:frequency] / @sample_rate
+    Array.new(buffer_size) do
+      sample =
+        case @waveform
+        when :sine then Math.sin(note_data[:phase])
+        when :sawtooth then 2.0 * (note_data[:phase] / (2.0 * Math::PI)) - 1.0
+        when :triangle then 2.0 * (2.0 * (note_data[:phase] / (2.0 * Math::PI) - 0.5).abs) - 1.0
+        when :pulse then note_data[:phase] < Math::PI ? 1.0 : -1.0
+        when :square then note_data[:phase] < Math::PI ? 0.5 : -0.5
+        else 0.0
+        end
+      note_data[:phase] += delta
+      note_data[:phase] -= 2.0 * Math::PI if note_data[:phase] > 2.0 * Math::PI
+      sample
     end
   end
-
-  def update_delta
-    @delta = 2.0 * Math::PI * @frequency / @sample_rate if @frequency
-  end
-
-  def generate_sample
-    sample =
-      case @waveform
-      when :sine then Math.sin(@phase)
-      when :sawtooth then 2.0 * (@phase / (2.0 * Math::PI)) - 1.0
-      when :triangle then 2.0 * (2.0 * (@phase / (2.0 * Math::PI) - 0.5).abs) - 1.0
-      when :pulse then @phase < Math::PI ? 1.0 : -1.0
-      when :square then @phase < Math::PI ? 0.5 : -0.5
-      else 0.0
-      end
-    @phase += @delta
-    @phase -= 2.0 * Math::PI if @phase > 2.0 * Math::PI
-    sample * @amplitude
-  end
 end
+
 
 class AudioStream < FFI::PortAudio::Stream
   include FFI::PortAudio
