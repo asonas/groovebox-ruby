@@ -149,7 +149,6 @@ class Oscillator
   end
 end
 
-
 class AudioStream < FFI::PortAudio::Stream
   include FFI::PortAudio
 
