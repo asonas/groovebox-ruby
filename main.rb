@@ -1,3 +1,4 @@
+require 'drb/drb'
 require 'ffi-portaudio'
 require 'unimidi'
 require 'yaml'
@@ -5,6 +6,8 @@ require 'yaml'
 SAMPLE_RATE = 44100
 BUFFER_SIZE = 256
 AMPLITUDE = 0.5
+BPM = 120
+STEPS = 16
 
 # 音階管理クラス
 class Note
@@ -19,8 +22,11 @@ class Note
     BASE_FREQUENCY * (2 ** (@semitone / 12.0))
   end
 
-  def set_by_midi_note(midi_note)
-    @semitone = midi_note - 69 # MIDIノート69がA4
+  def set_by_name(name)
+    note_index = NOTE_NAMES.index(name[0..-2]) # 音階部分
+    octave = name[-1].to_i
+    @semitone = (octave - 4) * 12 + note_index - 9
+    self
   end
 
   def name
@@ -41,8 +47,8 @@ class VCF
 
   def initialize(sample_rate)
     @sample_rate = sample_rate
-    @low_pass_cutoff = 1000.0 # 初期ローパスカットオフ周波数
-    @high_pass_cutoff = 100.0 # 初期ハイパスカットオフ周波数
+    @low_pass_cutoff = 1000.0
+    @high_pass_cutoff = 100.0
     reset_filters
   end
 
@@ -104,7 +110,7 @@ class Oscillator
     @amplitude = amplitude
     @waveform = :sawtooth
     @active_notes = {}
-    @vcf = VCF.new(sample_rate) # VCFインスタンスを初期化
+    @vcf = VCF.new(sample_rate)
   end
 
   def note_on(note, frequency)
@@ -222,6 +228,40 @@ def monitor_midi_signals(generator, note, config)
   end
 end
 
+class SequencerPlayer
+  def initialize(generator, sequencer)
+    @generator = generator
+    @sequencer = sequencer
+  end
+
+  def play
+    step_interval = 60.0 / BPM / STEPS
+    loop do
+      steps = @sequencer.steps
+      steps.each_with_index do |step, index|
+        if step.active
+          note = Note.new.set_by_name(step.note)
+          @generator.note_on(index, note.frequency)
+          sleep step_interval
+          @generator.note_off(index)
+        else
+          sleep step_interval
+        end
+      end
+    end
+  end
+end
+
+class Step
+  attr_accessor :active, :note, :velocity
+
+  def initialize(active: false, note: "C4", velocity: 127)
+    @active = active
+    @note = note
+    @velocity = velocity
+  end
+end
+
 # メイン処理
 FFI::PortAudio::API.Pa_Initialize
 
@@ -230,11 +270,19 @@ begin
   generator = Oscillator.new(SAMPLE_RATE, AMPLITUDE)
   stream = AudioStream.new(generator, SAMPLE_RATE, BUFFER_SIZE)
 
-  puts "Playing sound. Use MIDI to control:"
-  puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
-  monitor_midi_signals(generator, nil, config)
+  #puts "Playing sound. Use MIDI to control:"
+  #puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
+  #monitor_midi_signals(generator, nil, config)
 
-  sleep
+  DRb.start_service
+  sequencer = DRbObject.new_with_uri('druby://localhost:8787')
+
+  puts "Connected to sequencer. Playing sequence..."
+
+  player = SequencerPlayer.new(generator, sequencer)
+  player.play
+
+  #sleep
 ensure
   stream&.close
   FFI::PortAudio::API.Pa_Terminate
