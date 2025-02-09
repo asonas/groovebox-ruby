@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Waveform Visualizer</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 90vh;
+    }
+    #deviceSelector {
+      position: absolute;
+      top: 0;
+      width: 100%;
+      z-index: 10;
+      background: white;
+      padding: 10px;
+    }
+    select {
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="deviceSelector">
+    <label for="audioInput">Select Audio Input: </label>
+    <select id="audioInput"></select>
+  </div>
+  <canvas id="glCanvas"></canvas>
+
+  <script type="text/javascript">
+    const canvas = document.getElementById("glCanvas");
+    const gl = canvas.getContext("webgl");
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight * 0.9;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+
+    const vertexShaderSource = `
+      attribute float aSample;
+      attribute float aIndex;
+      uniform float uResolution;
+      uniform float uHeight;
+      varying float vSample;
+
+      void main() {
+        vSample = aSample;
+        float x = aIndex / uResolution * 2.0 - 1.0; // Normalize to [-1, 1]
+        float y = aSample * uHeight; // Scale to canvas height
+        gl_Position = vec4(x, y, 0.0, 1.0);
+      }
+    `;
+
+    const fragmentShaderSource = `
+      precision mediump float;
+      varying float vSample;
+
+      void main() {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); // Black color
+      }
+    `;
+
+    function createShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error("Shader compile failed with: " + gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+
+    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error("Program failed to link: " + gl.getProgramInfoLog(program));
+    }
+
+    gl.useProgram(program);
+
+    const resolution = 512; // Number of samples to visualize
+    const samples = new Float32Array(resolution).fill(0);
+    const indices = new Float32Array(resolution).map((_, i) => i);
+
+    const aSample = gl.getAttribLocation(program, "aSample");
+    const aIndex = gl.getAttribLocation(program, "aIndex");
+    const uResolution = gl.getUniformLocation(program, "uResolution");
+    const uHeight = gl.getUniformLocation(program, "uHeight");
+
+    const sampleBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, sampleBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, samples, gl.DYNAMIC_DRAW);
+    gl.vertexAttribPointer(aSample, 1, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(aSample);
+
+    const indexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    gl.vertexAttribPointer(aIndex, 1, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(aIndex);
+
+    gl.uniform1f(uResolution, resolution);
+
+    const deviceSelector = document.getElementById("audioInput");
+
+    async function updateDeviceList() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioDevices = devices.filter(device => device.kind === "audioinput");
+
+      deviceSelector.innerHTML = ""; // Clear existing options
+      audioDevices.forEach(device => {
+        const option = document.createElement("option");
+        option.value = device.deviceId;
+        option.textContent = device.label || `Microphone ${device.deviceId}`;
+        deviceSelector.appendChild(option);
+      });
+    }
+
+    async function startAudio(deviceId) {
+      const constraints = { audio: { deviceId: deviceId ? { exact: deviceId } : undefined } };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = resolution * 2;
+      const audioData = new Float32Array(analyser.fftSize);
+
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      function render() {
+        analyser.getFloatTimeDomainData(audioData);
+        samples.set(audioData.slice(0, resolution));
+        gl.bindBuffer(gl.ARRAY_BUFFER, sampleBuffer);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, samples);
+
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.LINE_STRIP, 0, resolution);
+
+        requestAnimationFrame(render);
+      }
+
+      gl.clearColor(1.0, 1.0, 1.0, 1.0); // Set white background
+      gl.uniform1f(uHeight, 1.0); // Normalize sample height to [-1, 1]
+      render();
+    }
+
+    deviceSelector.addEventListener("change", () => {
+      const selectedDeviceId = deviceSelector.value;
+      startAudio(selectedDeviceId);
+    });
+
+    window.addEventListener("load", async () => {
+      resizeCanvas(); // Adjust canvas size at load
+      await updateDeviceList();
+      const initialDeviceId = deviceSelector.value;
+      startAudio(initialDeviceId);
+    });
+
+    window.addEventListener("resize", resizeCanvas); // Adjust canvas size on resize
+  </script>
+</body>
+</html>
