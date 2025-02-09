@@ -7,7 +7,7 @@
 
 ```
 $ brew install portaudio
-$ gem install unimidi
+$ bundle install
 ```
 
 ## Usage
