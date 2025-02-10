@@ -270,19 +270,19 @@ begin
   generator = Oscillator.new(SAMPLE_RATE, AMPLITUDE)
   stream = AudioStream.new(generator, SAMPLE_RATE, BUFFER_SIZE)
 
-  #puts "Playing sound. Use MIDI to control:"
-  #puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
-  #monitor_midi_signals(generator, nil, config)
+  puts "Playing sound. Use MIDI to control:"
+  puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
+  monitor_midi_signals(generator, nil, config)
 
-  DRb.start_service
-  sequencer = DRbObject.new_with_uri('druby://localhost:8787')
+  #DRb.start_service
+  #sequencer = DRbObject.new_with_uri('druby://localhost:8787')
 
-  puts "Connected to sequencer. Playing sequence..."
+  #puts "Connected to sequencer. Playing sequence..."
 
-  player = SequencerPlayer.new(generator, sequencer)
-  player.play
+  #player = SequencerPlayer.new(generator, sequencer)
+  #player.play
 
-  #sleep
+  sleep
 ensure
   stream&.close
   FFI::PortAudio::API.Pa_Terminate
