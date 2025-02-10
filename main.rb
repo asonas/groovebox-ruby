@@ -3,8 +3,8 @@ require 'ffi-portaudio'
 require 'unimidi'
 require 'yaml'
 
-SAMPLE_RATE = 44100
-BUFFER_SIZE = 1024
+SAMPLE_RATE = 48000
+BUFFER_SIZE = 512
 AMPLITUDE = 100
 BPM = 120
 STEPS = 16
