@@ -4,8 +4,8 @@ require 'unimidi'
 require 'yaml'
 
 SAMPLE_RATE = 44100
-BUFFER_SIZE = 256
-AMPLITUDE = 0.5
+BUFFER_SIZE = 1024
+AMPLITUDE = 100
 BPM = 120
 STEPS = 16
 
