@@ -8,9 +8,11 @@ keyboard:
     end: 99
 
 switches:
-  "16": "sine"
-  "17": "sawtooth"
-  "18": "triangle"
-  "19": "pulse"
-  "20": "square"
+  16: "sine"
+  17: "sawtooth"
+  18: "triangle"
+  19: "pulse"
+  20: "square"
 
+start: 85
+stop: 86
