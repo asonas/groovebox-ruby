@@ -102,14 +102,46 @@ end
 
 # 波形生成器クラス（VCO）
 class Oscillator
-  attr_accessor :waveform, :active
+  attr_accessor :waveform
+  def initialize(waveform, sample_rate)
+    @waveform = waveform
+    @sample_rate = sample_rate
+  end
+
+  def generate_wave(note_data, buffer_size)
+    delta = 2.0 * Math::PI * note_data[:frequency] / @sample_rate
+    Array.new(buffer_size) do
+      sample =
+        case waveform
+        when :sine
+          Math.sin(note_data[:phase])
+        when :sawtooth
+          2.0 * (note_data[:phase] / (2.0 * Math::PI)) - 1.0
+        when :triangle
+          2.0 * (2.0 * (note_data[:phase] / (2.0 * Math::PI) - 0.5).abs) - 1.0
+        when :pulse
+          note_data[:phase] < Math::PI ? 1.0 : -1.0
+        when :square
+          note_data[:phase] < Math::PI ? 0.5 : -0.5
+        else
+          0.0
+        end
+      note_data[:phase] += delta
+      note_data[:phase] -= 2.0 * Math::PI if note_data[:phase] > 2.0 * Math::PI
+      sample
+    end
+  end
+end
+
+class Synthesizer
+  attr_accessor :active
   attr_reader :vcf
 
   def initialize(sample_rate, amplitude)
     @sample_rate = sample_rate
     @amplitude = amplitude
-    @waveform = :sawtooth
     @active_notes = {}
+    @oscillator = Oscillator.new(:sawtooth, sample_rate)
     @vcf = VCF.new(sample_rate)
   end
 
@@ -127,31 +159,11 @@ class Oscillator
     # 各ノートの波形を合成
     samples = Array.new(buffer_size, 0.0)
     @active_notes.each_value do |note_data|
-      samples = samples.zip(generate_wave(note_data, buffer_size)).map { |s1, s2| s1 + s2 }
+      samples = samples.zip(@oscillator.generate_wave(note_data, buffer_size)).map { |s1, s2| s1 + s2 }
     end
 
     # 平均化して振幅を保つ
     samples.map! { |sample| @vcf.apply(sample) * (@amplitude / @active_notes.size) }
-  end
-
-  private
-
-  def generate_wave(note_data, buffer_size)
-    delta = 2.0 * Math::PI * note_data[:frequency] / @sample_rate
-    Array.new(buffer_size) do
-      sample =
-        case @waveform
-        when :sine then Math.sin(note_data[:phase])
-        when :sawtooth then 2.0 * (note_data[:phase] / (2.0 * Math::PI)) - 1.0
-        when :triangle then 2.0 * (2.0 * (note_data[:phase] / (2.0 * Math::PI) - 0.5).abs) - 1.0
-        when :pulse then note_data[:phase] < Math::PI ? 1.0 : -1.0
-        when :square then note_data[:phase] < Math::PI ? 0.5 : -0.5
-        else 0.0
-        end
-      note_data[:phase] += delta
-      note_data[:phase] -= 2.0 * Math::PI if note_data[:phase] > 2.0 * Math::PI
-      sample
-    end
   end
 end
 
@@ -201,8 +213,8 @@ def monitor_midi_signals(generator, note, config)
               generator.note_on(midi_note, frequency)
               puts "Note On: #{Note::NOTE_NAMES[(midi_note % 12)]} (#{frequency.round(2)} Hz)"
             elsif config['switches'].key?(midi_note.to_s)
-              generator.waveform = config['switches'][midi_note.to_s].to_sym
-              puts "Waveform changed to: #{generator.waveform.capitalize}"
+              generator.oscillator.waveform = config['switches'][midi_note.to_s].to_sym
+              puts "Waveform changed to: #{generator.oscillator.waveform.capitalize}"
             end
           end
         when 0x80 # Note Off or Note On with velocity 0
@@ -267,12 +279,12 @@ FFI::PortAudio::API.Pa_Initialize
 
 begin
   config = YAML.load_file('midi_config.yml')
-  generator = Oscillator.new(SAMPLE_RATE, AMPLITUDE)
-  stream = AudioStream.new(generator, SAMPLE_RATE, BUFFER_SIZE)
+  synthesizer = Synthesizer.new(SAMPLE_RATE, AMPLITUDE)
+  stream = AudioStream.new(synthesizer, SAMPLE_RATE, BUFFER_SIZE)
 
   puts "Playing sound. Use MIDI to control:"
   puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
-  monitor_midi_signals(generator, nil, config)
+  monitor_midi_signals(synthesizer, nil, config)
 
   #DRb.start_service
   #sequencer = DRbObject.new_with_uri('druby://localhost:8787')
