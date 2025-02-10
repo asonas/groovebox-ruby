@@ -205,7 +205,7 @@ def monitor_midi_signals(generator, note, config)
               puts "Waveform changed to: #{generator.waveform.capitalize}"
             end
           end
-        when 0x80, 0x90 # Note Off or Note On with velocity 0
+        when 0x80 # Note Off or Note On with velocity 0
           midi_note = data[1]
           if (config['keyboard']['note_range']['start']..config['keyboard']['note_range']['end']).include?(midi_note)
             generator.note_off(midi_note)
