@@ -16,8 +16,21 @@ require_relative "lib/step"
 
 def monitor_midi_signals(synthesizer, sequencer_player, config)
   midi_input = UniMIDI::Input.use(config['midi_device']['index'])
+  midi_output = UniMIDI::Output.use(config['midi_device']['index'])
   puts "Listening for MIDI signals from #{midi_input.name}..."
+
+  white_keys = [0, 2, 4, 5, 7, 9, 11] # C, D, E, F, G, A, B
+
   loop do
+    # 白鍵のパッドを光らせる
+    (config['keyboard']['note_range']['start']..config['keyboard']['note_range']['end']).each do |midi_note|
+      if white_keys.include?(midi_note % 12)
+        midi_output.puts(0x90, midi_note, 120)
+      else
+        midi_output.puts(0x80, midi_note, 0)
+      end
+    end
+
     midi_input.gets.each do |message|
       data = message[:data]
       next if data[0] == 254 # Active Sensing を無視
