@@ -58,13 +58,38 @@ def monitor_midi_signals(synthesizer, sequencer_player, config)
       when 0xB0 # Control Change
         control = data[1]
         value = data[2]
+
+        # LPF / HPF
         cutoff_change = value == 127 ? 10 : -10
         if control == 71
           synthesizer.vcf.low_pass_cutoff += cutoff_change
           puts "VCF Low Pass Cutoff: #{synthesizer.vcf.low_pass_cutoff.round(2)} Hz"
-        elsif control == 74
+        elsif control == 72
           synthesizer.vcf.high_pass_cutoff += cutoff_change
           puts "VCF High Pass Cutoff: #{synthesizer.vcf.high_pass_cutoff.round(2)} Hz"
+        end
+
+        # ADSR
+        case control
+        when 73 # Attack
+          new_attack = 0.01 + (value / 127.0) * 2.49
+          synthesizer.envelope.attack = new_attack
+          puts "Attack: #{new_attack.round(2)}"
+
+        when 74 # Decay
+          new_decay = 0.01 + (value / 127.0) * 2.49
+          synthesizer.envelope.decay = new_decay
+          puts "Decay: #{new_decay.round(2)}"
+
+        when 75 # Sustain
+          new_sustain = value / 127.0
+          synthesizer.envelope.sustain = new_sustain
+          puts "Sustain: #{new_sustain.round(2)}"
+
+        when 76 # Release
+          new_release = 0.01 + (value / 127.0) * 2.49
+          synthesizer.envelope.release = new_release
+          puts "Release: #{new_release.round(2)}"
         end
 
         if control == config['start'] && value == 127
