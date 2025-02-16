@@ -71,26 +71,43 @@ def handle_midi_signals(synthesizer, sequencer_player, config)
         end
 
         # ADSR
+        # TODO: ADSRそれぞれの値を設定できる閾値を定義してその範囲で値を動かせるようにする
         case control
         when 73 # Attack
-          new_attack = 0.01 + (value / 127.0) * 2.49
-          synthesizer.envelope.attack = new_attack
-          puts "Attack: #{new_attack.round(2)}"
+          if value == 127
+            synthesizer.envelope.attack += 1
+          elsif value == 1
+            synthesizer.envelope.attack -= 1
+          end
+          synthesizer.envelope.attack = synthesizer.envelope.attack.clamp(0.01, 10.0)
+          puts "Attack: #{synthesizer.envelope.attack.round(2)}"
 
         when 74 # Decay
-          new_decay = 0.01 + (value / 127.0) * 2.49
-          synthesizer.envelope.decay = new_decay
-          puts "Decay: #{new_decay.round(2)}"
+          if value == 127
+            synthesizer.envelope.decay += 1
+          elsif value == 1
+            synthesizer.envelope.decay -= 1
+          end
+          synthesizer.envelope.decay = synthesizer.envelope.decay.clamp(0.01, 10.0)
+          puts "Decay: #{synthesizer.envelope.decay.round(2)}"
 
         when 75 # Sustain
-          new_sustain = value / 127.0
-          synthesizer.envelope.sustain = new_sustain
-          puts "Sustain: #{new_sustain.round(2)}"
+          if value == 127
+            synthesizer.envelope.sustain += 0.1
+          elsif value == 1
+            synthesizer.envelope.sustain -= 0.1
+          end
+          synthesizer.envelope.sustain = synthesizer.envelope.sustain.clamp(0.0, 1.0)
+          puts "Sustain: #{synthesizer.envelope.sustain.round(2)}"
 
         when 76 # Release
-          new_release = 0.01 + (value / 127.0) * 2.49
-          synthesizer.envelope.release = new_release
-          puts "Release: #{new_release.round(2)}"
+          if value == 127
+            synthesizer.envelope.release += 1
+          elsif value == 1
+            synthesizer.envelope.release -= 1
+          end
+          synthesizer.envelope.release = synthesizer.envelope.release.clamp(0.01, 10.0)
+          puts "Release: #{synthesizer.envelope.release.round(2)}"
         end
 
         if control == config['start'] && value == 127
