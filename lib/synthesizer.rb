@@ -46,7 +46,7 @@ class Synthesizer
     end
 
     # 固定のゲインをかける
-    master_gain = 0.3
+    master_gain = 5.0
     samples.map! { |sample| sample * master_gain }
 
     # TODO: リリースノートのクリーンアップしたいがバグってる...
