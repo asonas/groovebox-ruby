@@ -3,9 +3,9 @@ require 'ffi-portaudio'
 require 'unimidi'
 require 'yaml'
 
-SAMPLE_RATE = 48000
-BUFFER_SIZE = 512
-AMPLITUDE = 100
+SAMPLE_RATE = 44100
+BUFFER_SIZE = 128
+AMPLITUDE = 1000
 BPM = 120
 STEPS = 16
 
@@ -14,7 +14,7 @@ require_relative "lib/note"
 require_relative "lib/vca"
 require_relative "lib/step"
 
-def monitor_midi_signals(synthesizer, sequencer_player, config)
+def handle_midi_signals(synthesizer, sequencer_player, config)
   midi_input = UniMIDI::Input.use(config['midi_device']['index'])
   midi_output = UniMIDI::Output.use(config['midi_device']['index'])
   puts "Listening for MIDI signals from #{midi_input.name}..."
@@ -33,6 +33,7 @@ def monitor_midi_signals(synthesizer, sequencer_player, config)
 
     midi_input.gets.each do |message|
       data = message[:data]
+      # TODO: 254を受信出来なくなったらエラーを出して終了させる
       next if data[0] == 254 # Active Sensing を無視
 
       case data[0] & 0xF0
@@ -152,7 +153,9 @@ begin
 
   puts "Playing sound. Use MIDI to control:"
   puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
-  monitor_midi_signals(synthesizer, sequencer_player, config)
+  Thread.new do
+    handle_midi_signals(synthesizer, sequencer_player, config)
+  end
 
   DRb.thread.join
 ensure

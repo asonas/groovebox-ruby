@@ -26,7 +26,7 @@ class Sequencer
       seq.read(file)
     end
 
-    track = seq.tracks[1]
+    track = seq.tracks[0]
     note_on_events = track.events.select do |event|
       event.kind_of?(MIDI::NoteOn) && event.velocity > 0
     end
@@ -41,7 +41,7 @@ class Sequencer
       next if step_index >= @steps.size
 
       @steps[step_index].active = true
-      @steps[step_index].note   = "MIDI#{event.note}"
+      @steps[step_index].note   = "#{event.note}"
     end
   end
 
@@ -85,7 +85,7 @@ class Sequencer
   end
 end
 
-sequencer = Sequencer.new("./mekurume_prizm.mid")
+sequencer = Sequencer.new("./towerman_lead.mid")
 DRb.start_service('druby://localhost:8787', sequencer)
 puts "Sequencer DRb server running at druby://localhost:8787"
 
