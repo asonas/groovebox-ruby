@@ -37,7 +37,7 @@ def handle_midi_signals(synthesizer, sequencer_player, config)
       next if data[0] == 254 # Active Sensing を無視
 
       case data[0] & 0xF0
-      when 0x90 # Note On
+      when 0x90 # 144: Note On
         midi_note = data[1]
         velocity = data[2]
         if velocity > 0
@@ -50,13 +50,13 @@ def handle_midi_signals(synthesizer, sequencer_player, config)
             puts "Waveform changed to: #{synthesizer.oscillator.waveform.capitalize}"
           end
         end
-      when 0x80 # Note Off or Note On with velocity 0
+      when 0x80 # 128: Note Off or Note On with velocity 0
         midi_note = data[1]
         if (config['keyboard']['note_range']['start']..config['keyboard']['note_range']['end']).include?(midi_note)
           synthesizer.note_off(midi_note)
           puts "Note Off: #{Note::NOTE_NAMES[(midi_note % 12)]}"
         end
-      when 0xB0 # Control Change
+      when 0xB0 # 176: Control Change
         control = data[1]
         value = data[2]
 
