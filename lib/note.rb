@@ -2,8 +2,13 @@ class Note
   BASE_FREQUENCY = 440.0
   NOTE_NAMES = %w[C C# D D# E F F# G G# A A# B].freeze
 
+  attr_accessor :phase, :note_on_sample_index, :note_off_sample_index
+
   def initialize
     @semitone = 0
+    @phase = 0.0
+    @note_on_sample_index = nil
+    @note_off_sample_index = nil
   end
 
   def frequency
@@ -14,6 +19,19 @@ class Note
     note_index = NOTE_NAMES.index(name[0..-2]) # 音階部分
     octave = name[-1].to_i
     @semitone = (octave - 4) * 12 + note_index - 9
+    self
+  end
+
+  # MIDIノート番号で示される音高を、A4(=69番)を基準に
+  # 「何半音ずれているか」を計算し、@semitone に格納する。
+  # 例えば、MIDIノート60はC4で、これを渡すと
+  #  60 - 69 = -9
+  # となり、440Hzを基準に -9 半音分だけ低い周波数になる。
+  #
+  # @param [Integer] midi_note MIDIノート番号(0〜127)
+  # @return [Note] self
+  def set_by_midi(midi_note)
+    @semitone = midi_note - 69
     self
   end
 

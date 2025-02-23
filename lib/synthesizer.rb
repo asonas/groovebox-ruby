@@ -1,6 +1,7 @@
 require_relative "vcf"
 require_relative "oscillator"
 require_relative "envelope"
+require_relative "note"
 
 class Synthesizer
   attr_accessor :active, :envelope
@@ -13,15 +14,22 @@ class Synthesizer
     @oscillator = Oscillator.new(:sawtooth, sample_rate)
     @vcf = VCF.new(sample_rate)
     @envelope = Envelope.new
+    @global_sample_count = 0
   end
 
-  def note_on(note, frequency)
-    @active_notes[note] = { frequency: frequency, phase: 0.0, note_on_time: Time.now, note_off_time: nil }
+  def note_on(midi_note, frequency)
+    new_note = Note.new
+    new_note.set_by_midi(midi_note)
+    new_note.phase = 0.0
+
+    new_note.note_on_sample_index = @global_sample_count
+
+    @active_notes[midi_note] = new_note
   end
 
-  def note_off(note)
-    if @active_notes[note]
-      @active_notes[note][:note_off_time] = Time.now
+  def note_off(midi_note)
+    if @active_notes[midi_note]
+      @active_notes[midi_note].note_off_sample_index = @global_sample_count
     end
   end
 
@@ -31,14 +39,16 @@ class Synthesizer
     # 個々の発音を合成する先
     samples = Array.new(buffer_size, 0.0)
 
-    # すべてのノートを合成
-    @active_notes.each_value do |note_data|
-      wave = @oscillator.generate_wave(note_data, buffer_size)
+    start_sample_index = @global_sample_count
+
+    @active_notes.each_value do |note|
+      wave = @oscillator.generate_wave(note, buffer_size)
 
       wave.each_with_index do |sample_val, idx|
-        env_val = @envelope.apply_envelope(note_data, idx)
+        current_sample_index = start_sample_index + idx
+        env_val = @envelope.apply_envelope(note, current_sample_index, @sample_rate)
+
         wave[idx] = sample_val * env_val
-        # wave[idx] = @vcf.apply(sample_val * env_val)
       end
 
       # 各ノートの波形を足し合わせるだけ
@@ -46,10 +56,12 @@ class Synthesizer
     end
 
     # 固定のゲインをかける
+    # TODO: VCA側で制御したい
     master_gain = 5.0
     samples.map! { |sample| sample * master_gain }
 
-    # TODO: リリースノートのクリーンアップしたいがバグってる...
+    @global_sample_count += buffer_size
+
     cleanup_inactive_notes(buffer_size)
 
     samples
@@ -58,11 +70,10 @@ class Synthesizer
   private
 
   def cleanup_inactive_notes(buffer_size)
-    @active_notes.delete_if do |note_id, note_data|
-      if note_data[:note_off_time]
-        # バッファの最後のサンプルでエンベロープが0以下なら削除
-        final_envelope = @envelope.apply_envelope(note_data, buffer_size - 1)
-        final_envelope <= 0.0
+    @active_notes.delete_if do |note_id, note|
+      if note.note_off_sample_index
+        final_env = @envelope.apply_envelope(note, @global_sample_count - 1, @sample_rate)
+        final_env <= 0.0
       else
         false
       end
