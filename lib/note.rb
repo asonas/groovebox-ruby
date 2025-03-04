@@ -2,10 +2,11 @@ class Note
   BASE_FREQUENCY = 440.0
   NOTE_NAMES = %w[C C# D D# E F F# G G# A A# B].freeze
 
-  attr_accessor :phase, :note_on_sample_index, :note_off_sample_index
+  attr_accessor :phase, :note_on_sample_index, :note_off_sample_index, :midi_note
 
   def initialize
     @semitone = 0
+    @midi_note = 69 # A4
     @phase = 0.0
     @note_on_sample_index = nil
     @note_off_sample_index = nil
@@ -31,6 +32,7 @@ class Note
   # @param [Integer] midi_note MIDIノート番号(0〜127)
   # @return [Note] self
   def set_by_midi(midi_note)
+    @midi_note = midi_note
     @semitone = midi_note - 69
     self
   end
