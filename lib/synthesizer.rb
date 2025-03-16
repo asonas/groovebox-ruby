@@ -40,6 +40,7 @@ class Synthesizer
     samples = Array.new(buffer_size, 0.0)
 
     start_sample_index = @global_sample_count
+    active_note_count = 0
 
     @active_notes.each_value do |note|
       wave = @oscillator.generate_wave(note, buffer_size)
@@ -53,11 +54,22 @@ class Synthesizer
 
       # 各ノートの波形を足し合わせるだけ
       samples = samples.zip(wave).map { |s1, s2| s1 + s2 }
+      has_sound = false
+      wave.each do |sample|
+        if sample != 0.0
+          has_sound = true
+          break
+        end
+      end
+      active_note_count += 1 if has_sound
     end
 
-    # 固定のゲインをかける
-    # TODO: VCA側で制御したい
+    # 複数のノートがアクティブな場合は、平方根スケーリングを使用して
+    # より自然な音量調整を行う
     master_gain = 5.0
+    if active_note_count > 1
+      master_gain *= (1.0 / Math.sqrt(active_note_count))
+    end
     samples.map! { |sample| sample * master_gain }
 
     @global_sample_count += buffer_size

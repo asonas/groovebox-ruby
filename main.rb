@@ -14,6 +14,9 @@ require_relative "lib/note"
 require_relative "lib/vca"
 require_relative "lib/step"
 require_relative "lib/presets/kick"
+require_relative "lib/presets/snare"
+require_relative "lib/presets/hihat_closed"
+require_relative "lib/sidechain"
 
 def handle_midi_signals(groovebox, sequencer_player, config)
   midi_input = UniMIDI::Input.use(config['midi_device']['index'])
@@ -99,6 +102,32 @@ def handle_midi_signals(groovebox, sequencer_player, config)
           puts "Release: #{groovebox.current_instrument.envelope.release.round(2)}"
         end
 
+        # サイドチェインパラメータの調整
+        case control
+        when 77 # サイドチェインのThreshold
+          if groovebox.instance_variable_defined?(:@sidechain_connections) && !groovebox.instance_variable_get(:@sidechain_connections).empty?
+            # シンセサイザーに適用されているサイドチェイン
+            sidechain_connection = groovebox.instance_variable_get(:@sidechain_connections)[0]
+            if sidechain_connection
+              sidechain = sidechain_connection[:processor]
+              new_value = value == 127 ? -0.01 : 0.01
+              sidechain.threshold = (sidechain.threshold + new_value).clamp(0.01, 0.9)
+              puts "サイドチェイン Threshold: #{sidechain.threshold.round(2)}"
+            end
+          end
+        when 78 # サイドチェインのRelease
+          if groovebox.instance_variable_defined?(:@sidechain_connections) && !groovebox.instance_variable_get(:@sidechain_connections).empty?
+            # シンセサイザーに適用されているサイドチェイン
+            sidechain_connection = groovebox.instance_variable_get(:@sidechain_connections)[0]
+            if sidechain_connection
+              sidechain = sidechain_connection[:processor]
+              new_value = value == 127 ? -0.01 : 0.01
+              sidechain.release = (sidechain.release + new_value).clamp(0.01, 1.0)
+              puts "サイドチェイン Release: #{sidechain.release.round(2)}"
+            end
+          end
+        end
+
         case control
         when 40 # Channel Select
           groovebox.change_channel(3)
@@ -133,12 +162,18 @@ class DrumRack
 
   def initialize(base_midi_node)
     @tracks = {}
+    @track_volumes = {}
     @base_midi_node = base_midi_node
   end
 
-  def add_track(synth, pad_offset = 0)
+  def add_track(synth, pad_offset = 0, volume = 1.0)
     midi_note = @base_midi_node + pad_offset
     @tracks[midi_note] = synth
+    @track_volumes[midi_note] = volume
+  end
+
+  def set_track_volume(midi_note, volume)
+    @track_volumes[midi_note] = volume if @tracks.key?(midi_note)
   end
 
   def note_on(midi_note, velocity)
@@ -163,11 +198,20 @@ class DrumRack
       samples = synth.generate(buffer_size)
       next if samples.all? { |sample| sample.zero? }
 
+      # トラックごとの音量を適用
+      volume = @track_volumes[midi_note] || 1.0
+      samples.map! { |sample| sample * volume }
+
       mixed_samples = mixed_samples.zip(samples).map { |a, b| a + b }
       active_tracks += 1
     end
-    gain_adjustment = active_tracks > 0 ? 1.0 / active_tracks : 1.0
-    mixed_samples.map! { |sample| sample * gain_adjustment }
+
+    # 複数のトラックがアクティブな場合は、平方根スケーリングを使用して
+    # より自然な音量調整を行う（単純な割り算よりも音が小さくなりすぎない）
+    if active_tracks > 1
+      gain_adjustment = 1.0 / Math.sqrt(active_tracks)
+      mixed_samples.map! { |sample| sample * gain_adjustment }
+    end
 
     mixed_samples
   end
@@ -217,6 +261,7 @@ class Groovebox
   def initialize
     @instruments = []
     @current_channel = 0
+    @sidechain_connections = {}  # サイドチェイン接続を保存
   end
 
   def add_instrument(instrument)
@@ -239,8 +284,61 @@ class Groovebox
     current_instrument.note_off(midi_note)
   end
 
+  # サイドチェイン接続を設定
+  # @param trigger_index [Integer] トリガーとなるインストゥルメントのインデックス
+  # @param target_index [Integer] 効果を受けるインストゥルメントのインデックス
+  # @param options [Hash] サイドチェインのパラメータ
+  def setup_sidechain(trigger_index, target_index, options = {})
+    return if trigger_index >= @instruments.length || target_index >= @instruments.length
+
+    sidechain = Sidechain.new(
+      threshold: options[:threshold] || 0.3,
+      ratio: options[:ratio] || 4.0,
+      attack: options[:attack] || 0.001,
+      release: options[:release] || 0.2
+    )
+
+    @sidechain_connections[target_index] = {
+      trigger: trigger_index,
+      processor: sidechain,
+    }
+  end
+
   def generate(frame_count)
-    current_instrument.generate(frame_count)
+    # 各インストゥルメントの生の出力を保存
+    raw_outputs = []
+    @instruments.each do |instrument|
+      raw_outputs << instrument.generate(frame_count)
+    end
+
+    processed_outputs = raw_outputs.dup
+    @sidechain_connections.each do |target_idx, connection|
+      trigger_idx = connection[:trigger]
+      sidechain = connection[:processor]
+
+      processed_outputs[target_idx] = sidechain.process(
+        raw_outputs[trigger_idx],
+        raw_outputs[target_idx],
+        SAMPLE_RATE
+      )
+    end
+
+    mixed_samples = Array.new(frame_count, 0.0)
+    active_instruments = 0
+
+    processed_outputs.each do |samples|
+      next if samples.all? { |sample| sample.zero? }
+
+      mixed_samples = mixed_samples.zip(samples).map { |a, b| a + b }
+      active_instruments += 1
+    end
+
+    if active_instruments > 1
+      gain_adjustment = 1.0 / Math.sqrt(active_instruments)
+      mixed_samples.map! { |sample| sample * gain_adjustment }
+    end
+
+    mixed_samples
   end
 end
 
@@ -254,9 +352,23 @@ begin
 
   kick = Presets::Kick.new
   drum_rack = DrumRack.new(68)
-  drum_rack.add_track(kick, 0)
+  drum_rack.add_track(kick, 0, 1.2)
+
+  snare = Presets::Snare.new
+  drum_rack.add_track(snare, 1, 1.0)
+
+  hihat_closed = Presets::HihatClosed.new
+  drum_rack.add_track(hihat_closed, 2, 0.5)
 
   groovebox.add_instrument drum_rack
+
+  # サイドチェインの設定: キック（ドラムラック）をトリガーとして、シンセサイザーの音量を制御
+  groovebox.setup_sidechain(1, 0, {
+    threshold: 0.2,     # キックがこの値を超えたらサイドチェイン開始
+    attack: 0.001,      # 素早く音量を下げる
+    release: 0.2,       # ゆっくり音量を戻す
+    ratio: 8.0,         # 圧縮比
+  })
 
   stream = VCA.new(groovebox, SAMPLE_RATE, BUFFER_SIZE)
 
