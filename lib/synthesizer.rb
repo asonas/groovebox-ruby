@@ -18,7 +18,6 @@ class Synthesizer
   end
 
   def note_on(midi_note, velocity)
-    # TODO: velocityで強弱を付けたい
     new_note = Note.new
     new_note.set_by_midi(midi_note)
     new_note.phase = 0.0
