@@ -69,7 +69,7 @@ module Presets
         samples = samples.zip(wave).map { |s1, s2| s1 + s2 }
       end
 
-      master_gain = 5.0
+      master_gain = 10.0
       samples.map! { |sample| sample * master_gain }
 
       @global_sample_count += buffer_size
