@@ -44,17 +44,6 @@ class Envelope
 
       release_time = release_sample_offset.to_f / sample_rate
 
-      # # リリース開始前の値 = Attack -> Decay -> Sustain の順で計算
-      # TODO: 期待した動きになってないのであとで直す
-      # if release_start_offset < @attack * sample_rate
-      #   # Attack途中でオフになった
-      #   release_start_offset.to_f / sample_rate / @attack
-      # elsif release_start_offset < (@attack + @decay) * sample_rate
-      #   # Decay途中でオフになった
-      #   1.0 - ((release_start_offset - @attack * sample_rate) / (@decay * sample_rate)) * (1.0 - @sustain)
-      # else
-      # end
-
       # リリース計算
       volume_at_release_start = sustain_level_at_release(note, release_start_offset, sample_rate)
       envelope_val = volume_at_release_start * (1.0 - (release_time / @release))
