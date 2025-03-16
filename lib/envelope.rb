@@ -9,8 +9,10 @@ class Envelope
   end
 
   # サンプル単位で経過秒を計算する
-  # sample_index: 現在のサンプル番号
-  # sample_rate: サンプリングレート
+  # @param note [Note] ノートオン/オフの情報
+  # @param sample_index [Integer] 現在のサンプル番号
+  # @param sample_rate [Integer] サンプリングレート
+  # @return [Float] 0.0〜1.0の範囲のエンベロープ値
   def apply_envelope(note, sample_index, sample_rate)
     # Note.on / off 時刻（サンプル番号）がnilなら鳴っていないか無音扱い
     return 0.0 if note.note_on_sample_index.nil?
@@ -58,6 +60,52 @@ class Envelope
       envelope_val = volume_at_release_start * (1.0 - (release_time / @release))
       envelope_val.negative? ? 0.0 : envelope_val
     end.clamp(0.0, 1.0)
+  end
+
+
+  # 指定された時間におけるエンベロープの値を計算する
+  # @param current_time [Float] ノートオンからの経過時間（秒）
+  # @param time_since_note_off [Float, nil] ノートオフからの経過時間（秒）、nilの場合はノートオフされていない
+  # @return [Float] 0.0〜1.0の範囲のエンベロープ値
+  def at(current_time, time_since_note_off = nil)
+    # ノートオンからの経過時間を計算
+    time_since_note_on = current_time
+
+    # ノートがオフされていない場合
+    if time_since_note_off.nil?
+      # Attach
+      if time_since_note_on < @attack
+        return time_since_note_on / @attack
+      end
+
+      # Decay
+      if time_since_note_on < (@attack + @decay)
+        decay_progress = (time_since_note_on - @attack) / @decay
+        return 1.0 - ((1.0 - @sustain) * decay_progress)
+      end
+
+      # Sustain
+      return @sustain
+    else
+      # Release
+      # リリース開始時のレベルを計算
+      release_start_level =
+        if time_since_note_on < @attack
+          time_since_note_on / @attack
+        elsif time_since_note_on < (@attack + @decay)
+          decay_progress = (time_since_note_on - @attack) / @decay
+          1.0 - ((1.0 - @sustain) * decay_progress)
+        else
+          @sustain
+        end
+
+      # Releaseの進行度に応じて値を減衰
+      if time_since_note_off < @release
+        return release_start_level * (1.0 - (time_since_note_off / @release))
+      else
+        return 0.0  # リリース終了後は0
+      end
+    end
   end
 
   private

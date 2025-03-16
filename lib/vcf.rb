@@ -22,6 +22,33 @@ class VCF
     update_high_pass_alpha
   end
 
+  # サンプル配列に対してフィルタ処理を行う
+  # @param samples [Array<Float>] 処理する波形サンプルの配列
+  # @param filter_type [Symbol] 適用するフィルターの種類 (:low_pass, :high_pass, :band_pass, :all)
+  # @return [Array<Float>] フィルター適用後のサンプル配列
+  def process(samples, filter_type = :all)
+    case filter_type
+    when :low_pass
+      # 低域通過フィルターのみ適用
+      processed_samples = samples.map { |sample| low_pass(sample) }
+    when :high_pass
+      # 高域通過フィルターのみ適用
+      processed_samples = samples.map { |sample| high_pass(sample) }
+    when :band_pass
+      # バンドパスフィルター（低域と高域の両方を適用）
+      processed_samples = samples.map { |sample| low_pass(high_pass(sample)) }
+    when :all
+      # すべてのフィルターを適用（既存のapplyメソッドと同等）
+      processed_samples = samples.map { |sample| apply(sample) }
+    else
+      # 不明なフィルタータイプの場合は元のサンプルを返す
+      return samples
+    end
+
+    # フィルター適用後のサンプルを返す
+    processed_samples
+  end
+
   private
 
   def reset_filters
