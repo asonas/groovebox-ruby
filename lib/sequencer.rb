@@ -2,7 +2,7 @@ require 'io/console'
 require 'drb/drb'
 require 'midilib'
 
-require_relative "lib/step"
+require_relative "step"
 
 class Sequencer
   attr_reader :steps
@@ -84,10 +84,3 @@ class Sequencer
     end
   end
 end
-
-sequencer = Sequencer.new("./towerman_lead.mid")
-DRb.start_service('druby://localhost:8787', sequencer)
-puts "Sequencer DRb server running at druby://localhost:8787"
-
-sequencer.run
-DRb.thread.join

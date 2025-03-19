@@ -1,0 +1,13 @@
+#!/usr/bin/env ruby
+
+require 'drb/drb'
+
+require_relative '../lib/sequencer'
+
+sequencer = Sequencer.new
+
+DRb.start_service('druby://localhost:8787', sequencer)
+puts "Sequencer DRb server running at druby://localhost:8787"
+
+sequencer.run
+DRb.thread.join
