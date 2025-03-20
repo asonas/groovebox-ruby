@@ -16,6 +16,7 @@ GEM
     midi-winmm (0.1.10)
       ffi (>= 1.0)
     midilib (4.0.2)
+    minitest (5.25.5)
     parallel (1.26.3)
     parser (3.3.7.0)
       ast (~> 2.4.1)
@@ -46,6 +47,7 @@ GEM
       ffi-coremidi (~> 0.5, >= 0.5.1)
       midi-jruby (~> 0.2, >= 0.2.0)
       midi-winmm (~> 0.1, >= 0.1.10)
+    wavefile (1.1.2)
 
 PLATFORMS
   arm64-darwin-24
@@ -54,9 +56,11 @@ PLATFORMS
 DEPENDENCIES
   ffi-portaudio
   midilib
+  minitest (~> 5.18)
   rubocop
   ruby_wasm
   unimidi
+  wavefile (~> 1.1)
 
 BUNDLED WITH
    2.5.23
