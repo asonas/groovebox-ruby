@@ -15,6 +15,8 @@ require_relative "lib/synthesizer"
 require_relative "lib/note"
 require_relative "lib/vca"
 require_relative "lib/step"
+
+require_relative "lib/presets/bass"
 require_relative "lib/presets/kick"
 require_relative "lib/presets/snare"
 require_relative "lib/presets/hihat_closed"
@@ -194,6 +196,9 @@ begin
 
   groovebox = Groovebox.new
 
+  bass = Presets::Bass.new
+  groovebox.add_instrument bass
+
   synthesizer = Synthesizer.new(SAMPLE_RATE, AMPLITUDE)
   groovebox.add_instrument synthesizer
 
@@ -211,10 +216,18 @@ begin
 
   # サイドチェインの設定: キック（ドラムラック）をトリガーとして、シンセサイザーの音量を制御
   groovebox.setup_sidechain(1, 0, {
-    threshold: 0.2,     # キックがこの値を超えたらサイドチェイン開始
-    attack: 0.001,      # 素早く音量を下げる
-    release: 0.2,       # ゆっくり音量を戻す
-    ratio: 8.0,         # 圧縮比
+    threshold: 0.2,
+    attack: 0.001,
+    release: 0.2,
+    ratio: 8.0,
+  })
+
+  # ベースシンセ用のサイドチェインの設定
+  groovebox.setup_sidechain(2, 0, {
+    threshold: 0.2,
+    attack: 0.001,
+    release: 0.2,
+    ratio: 8.0,
   })
 
   stream = VCA.new(groovebox, SAMPLE_RATE, BUFFER_SIZE)
