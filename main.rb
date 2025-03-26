@@ -22,7 +22,7 @@ require_relative "lib/presets/snare"
 require_relative "lib/presets/hihat_closed"
 require_relative "lib/sidechain"
 
-def handle_midi_signals(groovebox, sequencer_player, config)
+def handle_midi_signals(groovebox, config)
   midi_input = UniMIDI::Input.use(config['midi_device']['index'])
   midi_output = UniMIDI::Output.use(config['midi_device']['index'])
   puts "Listening for MIDI signals from #{midi_input.name}..."
@@ -232,15 +232,16 @@ begin
 
   stream = VCA.new(groovebox, SAMPLE_RATE, BUFFER_SIZE)
 
-  DRb.start_service
-  sequencer = DRbObject.new_with_uri('druby://localhost:8787')
-
-  sequencer_player = SequencerPlayer.new(kick, sequencer)
+  # Grooveboxをdrubyサーバーとして公開
+  DRb.start_service('druby://localhost:8786', groovebox)
+  puts "Groovebox DRb server running at druby://localhost:8786"
 
   puts "Playing sound. Use MIDI to control:"
   puts "  MIDI: Note range #{config['keyboard']['note_range']['start']} - #{config['keyboard']['note_range']['end']}"
   Thread.new do
-    handle_midi_signals(groovebox, sequencer_player, config)
+    # TODO: configは渡さないようにする
+    # MIDI機器が見つからなかった場合は、代替のデバイスを探すUIを表示する
+    handle_midi_signals(groovebox, config)
   end
 
   DRb.thread.join

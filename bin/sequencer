@@ -3,11 +3,37 @@
 require 'drb/drb'
 
 require_relative '../lib/sequencer'
+require_relative '../lib/note'
 
-sequencer = Sequencer.new
+# Grooveboxクライアントを設定
+DRb.start_service
+puts "Grooveboxに接続しています..."
 
-DRb.start_service('druby://localhost:8787', sequencer)
-puts "Sequencer DRb server running at druby://localhost:8787"
+begin
+  groovebox = DRbObject.new_with_uri('druby://localhost:8786')
+
+  # 接続テスト - 簡単な音を鳴らしてみる
+  puts "Grooveboxに接続しました。接続テストを実行します..."
+
+  # 接続テスト: ノートオン/オフを試す
+  test_note = Note.new.set_by_name("C4")
+  groovebox.change_channel(0)  # 最初のチャンネルを選択
+  groovebox.note_on(test_note.midi_note, 100)
+  puts "テストノート: C4 (MIDI: #{test_note.midi_note}) を再生しました。"
+  sleep 0.5
+  groovebox.note_off(test_note.midi_note)
+  puts "テストノートをオフにしました。"
+
+  puts "接続テスト完了。Grooveboxに正常に接続されています。"
+rescue => e
+  puts "接続エラー: #{e.message}"
+  puts "Grooveboxが起動しているか確認してください。"
+  exit(1)
+end
+puts "Connected to Groovebox DRuby server at druby://localhost:8786"
+
+# Sequencerを初期化してGrooveboxを渡す
+sequencer = Sequencer.new(groovebox)
 
 sequencer.run
 DRb.thread.join

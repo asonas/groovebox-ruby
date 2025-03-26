@@ -3,7 +3,8 @@ class Groovebox
   def initialize
     @instruments = []
     @current_channel = 0
-    @sidechain_connections = {}  # サイドチェイン接続を保存
+    @sequencer_channel = 0
+    @sidechain_connections = {}
   end
 
   def add_instrument(instrument)
@@ -14,8 +15,24 @@ class Groovebox
     @current_channel = channel
   end
 
+  def change_sequencer_channel(channel)
+    @sequencer_channel = channel
+  end
+
   def current_instrument
     @instruments[@current_channel]
+  end
+
+  def sequencer_instrument
+    @instruments[@sequencer_channel]
+  end
+
+  def current_instrument_index
+    @current_channel
+  end
+
+  def get_instrument(index)
+    @instruments[index]
   end
 
   def note_on(midi_note, velocity)
@@ -24,6 +41,14 @@ class Groovebox
 
   def note_off(midi_note)
     current_instrument.note_off(midi_note)
+  end
+
+  def sequencer_note_on(midi_note, velocity)
+    sequencer_instrument.note_on(midi_note, velocity)
+  end
+
+  def sequencer_note_off(midi_note)
+    sequencer_instrument.note_off(midi_note)
   end
 
   # サイドチェイン接続を設定
