@@ -20,6 +20,7 @@ require_relative "lib/presets/bass"
 require_relative "lib/presets/kick"
 require_relative "lib/presets/snare"
 require_relative "lib/presets/hihat_closed"
+require_relative "lib/presets/piano"
 require_relative "lib/sidechain"
 
 def handle_midi_signals(groovebox, config)
@@ -196,11 +197,14 @@ begin
 
   groovebox = Groovebox.new
 
+  synthesizer = Synthesizer.new(SAMPLE_RATE, AMPLITUDE)
+  groovebox.add_instrument synthesizer
+
   bass = Presets::Bass.new
   groovebox.add_instrument bass
 
-  synthesizer = Synthesizer.new(SAMPLE_RATE, AMPLITUDE)
-  groovebox.add_instrument synthesizer
+  piano = Presets::Piano.new
+  groovebox.add_instrument piano
 
   kick = Presets::Kick.new
   drum_rack = DrumRack.new(68)

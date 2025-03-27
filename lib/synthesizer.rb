@@ -7,7 +7,7 @@ class Synthesizer
   attr_accessor :active, :envelope
   attr_reader :vcf
 
-  def initialize(sample_rate, amplitude)
+  def initialize(sample_rate = 44100, amplitude = 1000)
     @sample_rate = sample_rate
     @amplitude = amplitude
     @active_notes = {}
