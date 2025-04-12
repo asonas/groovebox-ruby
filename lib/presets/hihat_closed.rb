@@ -3,23 +3,22 @@ module Presets
     def initialize(sample_rate = 44100, amplitude = 1000)
       super(sample_rate, amplitude)
 
-      # 808ハイハットは6つの矩形波オシレータと帯域通過フィルタで構成
       @oscillator.waveform = :square
 
-      # 短いエンベロープで「チク」という音に
+      # Short envelope for a "tick" sound.
       @envelope.attack = 0.0
       @envelope.decay = 0.04
       @envelope.sustain = 0.0
       @envelope.release = 0.03
 
-      # ハイハット用の高めのカットオフ周波数
+      # Higher cutoff frequency for hi-hat.
       @vcf.high_pass_cutoff = 5500.0
 
       @base_midi_note = 96
     end
 
     def note_on(midi_note, velocity)
-      # ベース音階+チューニングを適用
+      # Apply base MIDI note.
       actual_note = @base_midi_note
 
       new_note = Note.new
@@ -51,20 +50,20 @@ module Presets
           time_since_note_off = (start_sample_index - note.note_off_sample_index) / @sample_rate.to_f
         end
 
-        # 808ハイハットの6つの発振器の周波数比率（金属的な倍音）
+        # Frequency ratios for the six oscillators of the 808 hi-hat (metallic harmonics).
         ratios = [1.0, 1.4, 1.7, 2.0, 2.5, 3.0]
 
         buffer_size.times do |i|
           current_time = time_since_note_on + (i / @sample_rate.to_f)
 
-          # 複数の矩形波を合成
+          # make a noise
           noise = 0.0
           ratios.each do |ratio|
-            # 少しデチューンして厚みを出す
+            # Slightly detune to add thickness.
             detune = rand(-0.01..0.01)
             freq = note.frequency * ratio * (1.0 + detune)
 
-            # 位相をずらした2つの矩形波を合成
+            # Combine two phase-shifted square waves.
             square1 = (Math.sin(2.0 * Math::PI * freq * current_time) > 0) ? 1.0 : -1.0
             square2 = (Math.sin(2.0 * Math::PI * freq * (current_time + 0.5)) > 0) ? 1.0 : -1.0
 
@@ -73,27 +72,26 @@ module Presets
 
           noise /= ratios.length
 
-          # ランダムノイズも加える
-          white_noise = rand(-0.3..0.3)  # ノイズレベルを下げる
-          noise = (noise * 0.8) + (white_noise * 0.2)  # ホワイトノイズの比率を下げる
+          # Also add random noise.
+          white_noise = rand(-0.3..0.3)  # Lower the noise level.
+          noise = (noise * 0.8) + (white_noise * 0.2)  # Lower the white noise ratio.
 
-          # エンベロープ適用
+          # Apply envelope.
           env_value = @envelope.at(current_time, time_since_note_off)
 
-          # 高域通過フィルタを通す（VCFクラスを使用）
-          value = noise * env_value * @amplitude * 0.8  # 全体の音量も少し下げる
+          # Pass through the high-pass filter (using VCF class).
+          value = noise * env_value * @amplitude * 0.8  # Also slightly lower the overall volume.
 
-          # サンプルに加算
+          # Add to the sample.
           samples[i] += value
         end
       end
 
-      # フィルター処理
       samples = @vcf.process(samples, :high_pass)
 
       cleanup_inactive_notes(buffer_size)
 
-      master_gain = 0.6  # ハイハットはかなり控えめに
+      master_gain = 1.0
       samples.map! { |sample| sample * master_gain }
 
       @global_sample_count += buffer_size

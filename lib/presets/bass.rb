@@ -14,9 +14,9 @@ module Presets
       @oscillator.waveform = :sawtooth
 
       @oscillator.harmonics = [
-        [1.0, 1.0], # 基本波
-        [2.0, 0.3], # 2倍音
-        [0.5, 0.5], # 1オクターブ下、50%の音量
+        [1.0, 1.0], # base wave
+        [2.0, 0.3], # 2nd harmonic
+        [0.5, 0.5], # 1 octave down, 50% volume
       ]
 
       @vcf.low_pass_cutoff = 800.0
@@ -28,8 +28,8 @@ module Presets
       @bass_note = Note.new.set_by_midi(36) # C1
     end
 
-    # @param midi_note [Integer] MIDIノート番号（入力そのまま使用）
-    # @param velocity [Integer] ベロシティ値（0-127）
+    # @param midi_note [Integer]
+    # @param velocity [Integer]
     def note_on(midi_note, velocity)
       new_note = Note.new
       semitone_diff = midi_note - @bass_note.midi_note
@@ -78,7 +78,7 @@ module Presets
         active_note_count += 1 if has_sound
       end
 
-      master_gain = 3.0
+      master_gain = 1.0
       if active_note_count > 1
         master_gain *= (1.0 / Math.sqrt(active_note_count))
       end

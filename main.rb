@@ -102,7 +102,7 @@ def handle_midi_signals(groovebox, config)
       midi_note = data[1]
       velocity = data[2]
 
-      # Ableton MoveでCCとして機能するが、誤ってタップすると意図せずNote onの信号が送られてくるので意図的に無視する
+      # Ignore spurious Note On messages from Ableton Move pads used for CC.
       skip_mini_note = [0,1,2,3,4,5,6,7,8,9,10,11]
 
       case status_byte & 0xF0
@@ -226,14 +226,14 @@ begin
 
   groovebox = Groovebox.new
 
+  piano = Presets::Piano.new
+  groovebox.add_instrument piano
+
   synthesizer = Synthesizer.new(SAMPLE_RATE, AMPLITUDE)
   groovebox.add_instrument synthesizer
 
   bass = Presets::Bass.new
   groovebox.add_instrument bass
-
-  piano = Presets::Piano.new
-  groovebox.add_instrument piano
 
   kick = Presets::Kick.new
   drum_rack = DrumRack.new(68)
