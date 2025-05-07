@@ -36,6 +36,7 @@ class Sequencer
     @groovebox = groovebox
     @current_position = 0
     @current_track = 0
+    @current_voice = 0
     @steps_per_track = 32
     @tracks = []
     @playing = false
@@ -56,14 +57,33 @@ class Sequencer
 
     @instruments.each_with_index do |instrument, idx|
       track_name = "Track #{idx}"
+
       if instrument.respond_to?(:pad_notes)
         instrument.pad_notes.sort.each do |pad_note|
           track = Array.new(@steps_per_track) { Step.new }
-          @tracks << { name: "Drum #{pad_note}", instrument_index: idx, midi_note: pad_note, steps: track }
+          @tracks << {
+            name: "Drum #{pad_note}",
+            instrument_index: idx,
+            midi_note: pad_note,
+            steps: track,
+            polyphony: 1,
+            voices: [0],
+          }
         end
       else
-        track = Array.new(@steps_per_track) { Step.new }
-        @tracks << { name: track_name, instrument_index: idx, midi_note: nil, steps: track }
+        polyphony = @groovebox.polyphony(idx)
+        voices = (0...polyphony).to_a
+
+        poly_steps = voices.map { Array.new(@steps_per_track) { Step.new } }
+
+        @tracks << {
+          name: track_name,
+          instrument_index: idx,
+          midi_note: nil,
+          steps: poly_steps,
+          polyphony: polyphony,
+          voices: voices,
+        }
       end
     end
 
@@ -73,9 +93,11 @@ class Sequencer
           name: "Default Track",
           instrument_index: 0,
           midi_note: nil,
-          steps: Array.new(@steps_per_track) { Step.new },
-          },
-        ]
+          steps: [Array.new(@steps_per_track) { Step.new }],
+          polyphony: 1,
+          voices: [0],
+        },
+      ]
     end
   end
 
@@ -88,11 +110,24 @@ class Sequencer
 
     puts "Loaded #{seq.tracks.size} tracks"
 
+    # Initialize tracks
     @tracks.each do |track_info|
-      track_info[:steps].each do |step|
-        step.active = false
-        step.note = nil
-        step.velocity = nil
+      if track_info[:midi_note]
+        # Drum track
+        track_info[:steps].each do |step|
+          step.active = false
+          step.note = nil
+          step.velocity = nil
+        end
+      else
+        # Synth track
+        track_info[:steps].each do |voice_steps|
+          voice_steps.each do |step|
+            step.active = false
+            step.note = nil
+            step.velocity = nil
+          end
+        end
       end
     end
 
@@ -173,21 +208,33 @@ class Sequencer
 
         puts "  Assigning synth notes to track #{target_track[:name]}"
 
-        # Set steps
+        step_notes = {}
         note_on_events.each do |event|
           step_index = (event.time_from_start / ticks_per_step).to_i
           next if step_index >= @steps_per_track
 
-          # Convert note number to note name
-          note_obj = Note.new.set_by_midi(event.note)
-          note_name = "#{note_obj.name}#{note_obj.octave}"
+          step_notes[step_index] ||= []
+          step_notes[step_index] << event
+        end
 
-          puts "    Setting note #{note_name} at step #{step_index + 1}"
+        step_notes.each do |step_index, events|
+          notes_count = events.size
 
-          target_step = target_track[:steps][step_index]
-          target_step.active = true
-          target_step.note = note_name
-          target_step.velocity = event.velocity
+          available_voices = [notes_count, target_track[:polyphony]].min
+
+          events.each_with_index do |event, note_index|
+            voice_index = note_index % available_voices
+
+            note_obj = Note.new.set_by_midi(event.note)
+            note_name = "#{note_obj.name}#{note_obj.octave}"
+
+            puts "    Setting note #{note_name} at step #{step_index + 1} on voice #{voice_index + 1}"
+
+            target_step = target_track[:steps][voice_index][step_index]
+            target_step.active = true
+            target_step.note = note_name
+            target_step.velocity = event.velocity
+          end
         end
       end
     end
@@ -196,20 +243,36 @@ class Sequencer
     @current_position = 0
   end
 
-  def toggle_step(track_index, step_index)
-    track = @tracks[track_index][:steps]
-    step = track[step_index]
+  def toggle_step(track_index, step_index, voice_index = 0)
+    track = @tracks[track_index]
 
-    step.active = !step.active
+    # Drum track
+    if track[:midi_note]
+      step = track[:steps][step_index]
+      step.active = !step.active
+    else
+      # Synth track
+      voice_index = [voice_index, track[:polyphony] - 1].min
+      step = track[:steps][voice_index][step_index]
+      step.active = !step.active
 
-    # Set default note if needed for active synth track steps
-    if step.active && @tracks[track_index][:midi_note].nil? && step.note.nil?
-      step.note = "C4"
+      if step.active && step.note.nil?
+        step.note = "C4"
+      end
     end
   end
 
   # Transpose note up by one semitone
-  def transpose_note_up(step)
+  def transpose_note_up(track_index, step_index, voice_index = 0)
+    track = @tracks[track_index]
+
+    step =
+      if track[:midi_note]
+        track[:steps][step_index]
+      else
+        track[:steps][voice_index][step_index]
+      end
+
     return unless step && step.active && step.note
 
     note = Note.new.set_by_name(step.note)
@@ -223,7 +286,16 @@ class Sequencer
   end
 
   # Transpose note down by one semitone
-  def transpose_note_down(step)
+  def transpose_note_down(track_index, step_index, voice_index = 0)
+    track = @tracks[track_index]
+
+    step =
+      if track[:midi_note]
+        track[:steps][step_index]
+      else
+        track[:steps][voice_index][step_index]
+      end
+
     return unless step && step.active && step.note
 
     note = Note.new.set_by_name(step.note)
@@ -237,7 +309,16 @@ class Sequencer
   end
 
   # Transpose note up by one octave
-  def transpose_octave_up(step)
+  def transpose_octave_up(track_index, step_index, voice_index = 0)
+    track = @tracks[track_index]
+
+    step =
+      if track[:midi_note]
+        track[:steps][step_index]
+      else
+        track[:steps][voice_index][step_index]
+      end
+
     return unless step && step.active && step.note
 
     note = Note.new.set_by_name(step.note)
@@ -251,7 +332,16 @@ class Sequencer
   end
 
   # Transpose note down by one octave
-  def transpose_octave_down(step)
+  def transpose_octave_down(track_index, step_index, voice_index = 0)
+    track = @tracks[track_index]
+
+    step =
+      if track[:midi_note]
+        track[:steps][step_index]
+      else
+        track[:steps][voice_index][step_index]
+      end
+
     return unless step && step.active && step.note
 
     note = Note.new.set_by_name(step.note)
@@ -576,36 +666,76 @@ class Sequencer
       display
       key = STDIN.getch
 
-      # 現在のステップを取得 (編集モードがないので常に必要)
-      current_step = @tracks[@current_track][:steps][@current_position] if @current_track < @tracks.size
+      current_track_info = @tracks[@current_track] if @current_track < @tracks.size
+
+      # if current_track_info
+      #   if current_track_info[:midi_note]
+      #     current_step = current_track_info[:steps][@current_position]
+      #   elsif current_track_info[:polyphony] == 1
+      #     current_step = current_track_info[:steps][0][@current_position]
+      #   else
+      #     current_step = current_track_info[:steps][@current_voice][@current_position]
+      #   end
+      # end
 
       case key
-      when "\e" # エスケープキーまたは特殊キー
-        # エスケープキーは何もしない (以前は編集モード終了)
-
-        # 矢印キーの場合
+      when "\e"
         next_key = STDIN.getch
         if next_key == "["
           case STDIN.getch
-          when "D" # 左矢印
+          when "D"
             @current_position -= 1 if @current_position > 0
-          when "C" # 右矢印
+          when "C"
             @current_position += 1 if @current_position < @steps_per_track - 1
-          when "A" # 上矢印
-            @current_track -= 1 if @current_track > 0
-          when "B" # 下矢印
-            @current_track += 1 if @current_track < @tracks.size - 1
+          when "A"
+            if @current_voice > 0 && current_track_info && current_track_info[:polyphony] > 1
+              @current_voice -= 1
+            else
+              @current_track -= 1 if @current_track > 0
+              if @current_track >= 0 && @tracks[@current_track]
+                @current_voice = [@tracks[@current_track][:polyphony] - 1, 0].max
+              end
+            end
+          when "B"
+            if current_track_info &&
+               current_track_info[:polyphony] > 1 &&
+               @current_voice < current_track_info[:polyphony] - 1
+              @current_voice += 1
+            else
+              @current_track += 1 if @current_track < @tracks.size - 1
+              @current_voice = 0
+            end
           end
         end
+      when "\t" # Tab
+        if current_track_info && current_track_info[:polyphony] > 1
+          @current_voice = (@current_voice + 1) % current_track_info[:polyphony]
+        end
       when "\r" # Enter
-        toggle_step(@current_track, @current_position)
+        toggle_step(@current_track, @current_position, @current_voice)
+      when "h", "H" # 一音下げる
+        unless current_track_info && current_track_info[:midi_note]
+          transpose_note_down(@current_track, @current_position, @current_voice)
+        end
+      when "l", "L" # 一音上げる
+        unless current_track_info && current_track_info[:midi_note]
+          transpose_note_up(@current_track, @current_position, @current_voice)
+        end
+      when "y", "Y" # 一オクターブ下げる
+        unless current_track_info && current_track_info[:midi_note]
+          transpose_octave_down(@current_track, @current_position, @current_voice)
+        end
+      when "o", "O" # 一オクターブ上げる
+        unless current_track_info && current_track_info[:midi_note]
+          transpose_octave_up(@current_track, @current_position, @current_voice)
+        end
       when " " # スペース
         play_sequence
-      when "s", "S" # MIDI保存
+      when "s", "S"
         save_to_midi_file
-      when "\u0003" # Ctrl+C
-        @playing = false # Stop if playing
-        all_notes_off    # Turn off all notes
+      when "\u0003"
+        @playing = false
+        all_notes_off
         puts "exiting..."
         break
       end

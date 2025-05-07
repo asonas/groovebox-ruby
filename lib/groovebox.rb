@@ -1,14 +1,22 @@
 class Groovebox
-  attr_reader :instruments
+  attr_reader :instruments, :instrument_polyphony
   def initialize
     @instruments = []
+    @instrument_polyphony = {}
     @current_channel = 0
     @sequencer_channel = 0
     @sidechain_connections = {}
   end
 
-  def add_instrument(instrument)
+  def add_instrument(instrument, polyphony = 1)
+    instrument_index = @instruments.length
     @instruments.push instrument
+    @instrument_polyphony[instrument_index] = [1, [polyphony.to_i, 4].min].max
+    instrument_index
+  end
+
+  def polyphony(instrument_index)
+    @instrument_polyphony[instrument_index] || 1
   end
 
   def change_channel(channel)

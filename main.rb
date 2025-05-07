@@ -227,9 +227,9 @@ begin
   groovebox = Groovebox.new
 
   piano = Presets::Piano.new
-  groovebox.add_instrument piano
+  groovebox.add_instrument piano, 4
 
-  synthesizer = Synthesizer.new(SAMPLE_RATE, AMPLITUDE)
+  synthesizer = Synthesizer.new
   groovebox.add_instrument synthesizer
 
   bass = Presets::Bass.new

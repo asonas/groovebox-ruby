@@ -4,7 +4,7 @@ require_relative "envelope"
 require_relative "note"
 
 class Synthesizer
-  attr_accessor :active, :envelope
+  attr_accessor :active, :envelope, :oscillator, :filter_type
   attr_reader :vcf
 
   def initialize(sample_rate = 44100, amplitude = 1000)
@@ -15,6 +15,7 @@ class Synthesizer
     @vcf = VCF.new(sample_rate)
     @envelope = Envelope.new
     @global_sample_count = 0
+    @filter_type = nil  # デフォルトではフィルターなし
   end
 
   def note_on(midi_note, velocity)
@@ -36,7 +37,6 @@ class Synthesizer
   def generate(buffer_size)
     return Array.new(buffer_size, 0.0) if @active_notes.empty?
 
-    # 個々の発音を合成する先
     samples = Array.new(buffer_size, 0.0)
 
     start_sample_index = @global_sample_count
@@ -52,7 +52,6 @@ class Synthesizer
         wave[idx] = sample_val * env_val
       end
 
-      # 各ノートの波形を足し合わせるだけ
       samples = samples.zip(wave).map { |s1, s2| s1 + s2 }
       has_sound = false
       wave.each do |sample|
@@ -64,9 +63,12 @@ class Synthesizer
       active_note_count += 1 if has_sound
     end
 
-    # 複数のノートがアクティブな場合は、平方根スケーリングを使用して
-    # より自然な音量調整を行う
-    master_gain = 5.0
+    # フィルタータイプに応じた処理を行う
+    if @filter_type
+      samples = @vcf.process(samples, @filter_type)
+    end
+
+    master_gain = 10.0
     if active_note_count > 1
       master_gain *= (1.0 / Math.sqrt(active_note_count))
     end
