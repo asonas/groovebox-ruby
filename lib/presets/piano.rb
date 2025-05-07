@@ -196,9 +196,8 @@ module Presets
         active_note_count += 1 if has_sound
       end
 
-      master_gain = 1.0  # Master gain adjustment (reduce volume when multiple notes are playing)
+      master_gain = 2.0
       if active_note_count > 1
-        # If multiple notes are playing, reduce the gain.
         master_gain *= (1.0 / Math.sqrt(active_note_count))
       end
       samples.map! { |sample| sample * master_gain }

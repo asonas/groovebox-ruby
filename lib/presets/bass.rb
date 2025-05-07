@@ -78,7 +78,7 @@ module Presets
         active_note_count += 1 if has_sound
       end
 
-      master_gain = 1.0
+      master_gain = 15.0
       if active_note_count > 1
         master_gain *= (1.0 / Math.sqrt(active_note_count))
       end

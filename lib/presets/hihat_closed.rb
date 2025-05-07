@@ -91,7 +91,7 @@ module Presets
 
       cleanup_inactive_notes(buffer_size)
 
-      master_gain = 1.0
+      master_gain = 15.0
       samples.map! { |sample| sample * master_gain }
 
       @global_sample_count += buffer_size
