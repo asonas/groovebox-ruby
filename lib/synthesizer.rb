@@ -15,7 +15,7 @@ class Synthesizer
     @vcf = VCF.new(sample_rate)
     @envelope = Envelope.new
     @global_sample_count = 0
-    @filter_type = nil  # デフォルトではフィルターなし
+    @filter_type = nil
   end
 
   def note_on(midi_note, velocity)
@@ -63,7 +63,6 @@ class Synthesizer
       active_note_count += 1 if has_sound
     end
 
-    # フィルタータイプに応じた処理を行う
     if @filter_type
       samples = @vcf.process(samples, @filter_type)
     end

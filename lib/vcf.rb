@@ -34,25 +34,20 @@ class VCF
   # @param filter_type [Symbol] 適用するフィルターの種類 (:low_pass, :high_pass, :band_pass, :all)
   # @return [Array<Float>] フィルター適用後のサンプル配列
   def process(samples, filter_type = :all)
-    case filter_type
-    when :low_pass
-      # 低域通過フィルターのみ適用
-      processed_samples = samples.map { |sample| low_pass(sample) }
-    when :high_pass
-      # 高域通過フィルターのみ適用
-      processed_samples = samples.map { |sample| high_pass(sample) }
-    when :band_pass
-      # バンドパスフィルター（低域と高域の両方を適用）
-      processed_samples = samples.map { |sample| low_pass(high_pass(sample)) }
-    when :all
-      # すべてのフィルターを適用（既存のapplyメソッドと同等）
-      processed_samples = samples.map { |sample| apply(sample) }
-    else
-      # 不明なフィルタータイプの場合は元のサンプルを返す
-      return samples
-    end
+    processed_samples =
+      case filter_type
+      when :low_pass
+        samples.map { |sample| low_pass(sample) }
+      when :high_pass
+        samples.map { |sample| high_pass(sample) }
+      when :band_pass
+        samples.map { |sample| low_pass(high_pass(sample)) }
+      when :all
+        samples.map { |sample| apply(sample) }
+      else
+        return samples
+      end
 
-    # フィルター適用後のサンプルを返す
     processed_samples
   end
 
@@ -87,23 +82,18 @@ class VCF
 
     input = input.clamp(-10.0, 10.0)
 
-    # レゾナンスが設定されている場合はフィードバックする
     if @resonance > 0.01
       feedback_value = @low_pass_prev_output * @feedback
 
-      # NaNチェック - フィードバック値が無効な場合はフィードバックを適用しない
       feedback_value = 0.0 if feedback_value.nan? || feedback_value.infinite?
 
-      # 入力からフィードバックを減算
       filtered_input = input - feedback_value
 
-      # フィルター係数を適用
       output = @low_pass_alpha * filtered_input + (1 - @low_pass_alpha) * @low_pass_prev_output
 
       @low_pass_prev_input = input
       @low_pass_prev_output = output
 
-      # クリッピング防止
       output.clamp(-3.0, 3.0)
     else
       output = @low_pass_alpha * input + (1 - @low_pass_alpha) * @low_pass_prev_output

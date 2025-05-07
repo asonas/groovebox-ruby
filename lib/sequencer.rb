@@ -360,52 +360,73 @@ class Sequencer
     puts "==================="
 
     # ステップの番号を表示
-    print "           "
+    print "            "
     puts (1..@steps_per_track).map { |n| n.to_s.rjust(4) }.join
 
-    # 各トラックのステップを表示
+    # 各トラックと声部のステップを表示
     @tracks.each_with_index do |track_info, track_idx|
-      track_name = track_info[:name][0..8]
+      if track_info[:midi_note] || track_info[:polyphony] == 1
+        track_name = track_info[:name][0..8]
 
-      if track_idx == @current_track
-        print "→ #{track_name.ljust(9)} "
-      else
-        print "  #{track_name.ljust(9)} "
-      end
-
-      # トラックのステップを表示
-      steps = track_info[:steps]
-      puts steps.map.with_index { |step, step_idx|
-        # ドラムトラックとシンセトラックで表示を変える
-        is_drum = track_info[:midi_note] != nil
-
-        step_display = if is_drum
-                         # ドラムの場合はノート表示ではなく「xx」と表示
-                         step.active ? "xx" : "__"
-                      else
-                        # シンセの場合はノート名を表示
-                        note_display = step.note && step.active ? step.note[0..1] : "__"
-                        note_display
-                      end
-
-        if track_idx == @current_track && step_idx == @current_position
-          if step.active
-            "[#{step_display}]"
-          else
-            "[__]"
-          end
+        if track_idx == @current_track && @current_voice == 0
+          print "→ #{track_name.ljust(10)} "
         else
-          step.active ? " #{step_display} " : " __ "
+          print "  #{track_name.ljust(10)} "
         end
-      }.join
+
+        steps = track_info[:midi_note] ? track_info[:steps] : track_info[:steps][0]
+        puts display_steps(steps, track_info, track_idx, 0)
+      else
+        base_name = track_info[:name][0..6]
+
+        # 各声部を表示
+        track_info[:voices].each_with_index do |voice, voice_idx|
+          voice_name = "#{base_name} V#{voice_idx + 1}"
+
+          if track_idx == @current_track && voice_idx == @current_voice
+            print "→ #{voice_name.ljust(9)} "
+          else
+            print "  #{voice_name.ljust(9)} "
+          end
+
+          steps = track_info[:steps][voice_idx]
+          puts display_steps(steps, track_info, track_idx, voice_idx)
+        end
+      end
     end
 
     puts "\nCommands:"
     puts "  Space: Play/Stop"
     puts "  Arrow keys: Move cursor"
+    puts "  Tab: Switch voice (for polyphonic tracks)"
     puts "  Enter: Toggle step"
+    puts "  H/L: Transpose note down/up"
+    puts "  Y/O: Transpose octave down/up"
     puts "  s: Save as MIDI file (format: yyyy-mm-dd-hh-mm-ss.mid)"
     puts "  Ctrl+C: Exit"
+  end
+
+  def display_steps(steps, track_info, track_idx, voice_idx)
+    is_drum = track_info[:midi_note] != nil
+
+    steps.map.with_index { |step, step_idx|
+      step_display =
+        if is_drum
+          step.active ? "xx" : "__"
+        else
+          step.note && step.active ? step.note[0..1] : "__"
+        end
+
+      if track_idx == @current_track && voice_idx == @current_voice && step_idx == @current_position
+        if step.active
+          "[#{step_display}]"
+        else
+          "[__]"
+        end
+      else
+        step.active ? " #{step_display} " : " __ "
+      end
+    }.join
   end
 
   def play_sequence
@@ -413,8 +434,6 @@ class Sequencer
 
     if @playing
       @playing = false
-
-      # 停止時にすべてのアクティブなノートをオフにする
       all_notes_off
       return
     end
@@ -427,39 +446,42 @@ class Sequencer
       play_position = 0
 
       while @playing
-        # 各トラックの現在位置のステップをチェック
         @tracks.each do |track_info|
-          step = track_info[:steps][play_position]
+          instrument_index = track_info[:instrument_index]
+          @groovebox.change_sequencer_channel(instrument_index)
 
-          if step.active
-            instrument_index = track_info[:instrument_index]
+          if track_info[:midi_note]
+            # ドラムトラックの場合
+            step = track_info[:steps][play_position]
 
-            if track_info[:midi_note].nil?
-              begin
-                # ノート文字列からMIDIノート番号に変換
-                note_obj = Note.new.set_by_name(step.note)
-                velocity = step.velocity || 100
-
-                @groovebox.change_sequencer_channel(instrument_index)
-
-                # Grooveboxに直接note_onを呼び出す
-                @groovebox.sequencer_note_on(note_obj.midi_note, velocity)
-              rescue => e
-                puts "error synth: #{e.message}"
-              end
-            else
-              # DrumRack
+            if step.active
               begin
                 midi_note = track_info[:midi_note]
                 velocity = step.velocity || 100
-
-                # チャンネルを変更
-                @groovebox.change_sequencer_channel(instrument_index)
-
-                # Grooveboxに特定のチャンネルを設定してからnote_onを呼び出す
                 @groovebox.sequencer_note_on(midi_note, velocity)
               rescue => e
                 puts "error drum: #{e.message}"
+              end
+            end
+          else
+            # シンセサイザートラックの場合
+            # 全ての声部をチェック
+            track_info[:voices].each_with_index do |voice, voice_idx|
+              step =
+                if track_info[:polyphony] == 1
+                  track_info[:steps][0][play_position]  # 単音の場合も最初の声部配列から取得
+                else
+                  track_info[:steps][voice_idx][play_position]
+                end
+
+              if step && step.active
+                begin
+                  note_obj = Note.new.set_by_name(step.note)
+                  velocity = step.velocity || 100
+                  @groovebox.sequencer_note_on(note_obj.midi_note, velocity)
+                rescue => e
+                  puts "error synth: #{e.message}"
+                end
               end
             end
           end
@@ -470,37 +492,46 @@ class Sequencer
 
         # ノートをオフにする
         @tracks.each do |track_info|
-          step = track_info[:steps][play_position]
-          if step.active
-            instrument_index = track_info[:instrument_index]
+          instrument_index = track_info[:instrument_index]
+          @groovebox.change_sequencer_channel(instrument_index)
 
-            if track_info[:midi_note].nil?
-              # Synthesizer
-              # TODO: track_infoからは分かりづらいのでclassで判断できるようにする
-              begin
-                note_obj = Note.new.set_by_name(step.note)
-                @groovebox.change_sequencer_channel(instrument_index)
-                @groovebox.sequencer_note_off(note_obj.midi_note)
-              rescue => e
-                puts "error synth: #{e.message}"
-              end
-            else
-              # DrumRack
+          if track_info[:midi_note]
+            # ドラムトラックの場合
+            step = track_info[:steps][play_position]
+
+            if step.active
               begin
                 midi_note = track_info[:midi_note]
-                @groovebox.change_sequencer_channel(instrument_index)
                 @groovebox.sequencer_note_off(midi_note)
               rescue => e
                 puts "error drum: #{e.message}"
               end
             end
+          else
+            # シンセサイザートラックの場合
+            # 全ての声部をチェック
+            track_info[:voices].each_with_index do |voice, voice_idx|
+              step =
+                if track_info[:polyphony] == 1
+                  track_info[:steps][0][play_position]  # 単音の場合も最初の声部配列から取得
+                else
+                  track_info[:steps][voice_idx][play_position]
+                end
+
+              if step && step.active
+                begin
+                  note_obj = Note.new.set_by_name(step.note)
+                  @groovebox.sequencer_note_off(note_obj.midi_note)
+                rescue => e
+                  puts "error synth: #{e.message}"
+                end
+              end
+            end
           end
         end
 
-        # 残りのステップ時間を待つ
         sleep step_interval * 0.2
 
-        # 次のステップへ
         play_position = (play_position + 1) % @steps_per_track
       end
     end
@@ -550,20 +581,15 @@ class Sequencer
     # デバッグ情報
     puts "Saving steps:"
 
-    # シンセトラックとドラムトラックを分けずに処理
+    # 各トラックを処理
     @tracks.each_with_index do |track_info, track_idx|
-      # アクティブなステップがなければ、このトラックをスキップ
-      active_steps = track_info[:steps].select(&:active)
-      next if active_steps.empty?
-
-      # トラック情報の出力
       track_type = track_info[:midi_note].nil? ? "Synth" : "Drum"
-      puts "Track #{track_idx}: #{track_info[:name]} (#{track_type})"
+      track_name = track_info[:name]
 
       # MIDIトラック作成
       midi_track = MIDI::Track.new(seq)
       seq.tracks << midi_track
-      midi_track.name = track_info[:name]
+      midi_track.name = track_name
 
       # チャンネル設定
       channel = track_info[:midi_note].nil? ? 0 : 9  # シンセなら0、ドラムなら9(チャンネル10)
@@ -576,61 +602,21 @@ class Sequencer
       # ステップデータの追加
       ticks_per_step = seq.ppqn / 4.0  # 16分音符あたりのティック数
 
-      last_time = 0  # 前回のタイムスタンプを記録
-
-      # アクティブなステップだけを処理するためにソート
-      active_step_indices = []
-      track_info[:steps].each_with_index do |step, idx|
-        active_step_indices << idx if step.active
-      end
-
-      # ステップインデックスでソートして処理
-      active_step_indices.sort.each do |step_idx|
-        step = track_info[:steps][step_idx]
-
-        # ノートが有効か確認
-        next unless step.note
-
-        # ノートの開始位置（ティック単位）
-        start_time = (step_idx * ticks_per_step).to_i
-
-        # デルタタイム（前回のイベントからの経過時間）
-        delta_time = start_time - last_time
-        last_time = start_time
-
-        # ノートの長さ（ティック単位） - 16分音符の長さ
-        duration = (ticks_per_step * 0.95).to_i
-
-        # MIDI番号への変換
-        midi_note = nil
-        if track_info[:midi_note].nil?
-          # シンセサイザーの場合、ノート名からMIDIノート番号に変換
-          begin
-            note_obj = Note.new.set_by_name(step.note)
-            midi_note = note_obj.midi_note
-            puts "  Step #{step_idx + 1}: Note #{step.note} (MIDI: #{midi_note})"
-          rescue => e
-            puts "Warning: Failed to convert note '#{step.note}': #{e.message}"
-            next
-          end
-        else
-          # DrumRackの場合、midi_noteを使用
-          midi_note = track_info[:midi_note].to_i
-          puts "  Step #{step_idx + 1}: Drum pad #{midi_note}"
+      # アクティブなステップを処理
+      if track_info[:midi_note]
+        # ドラムトラックの場合
+        steps = track_info[:steps]
+        process_steps_for_midi(seq, midi_track, steps, track_info, channel, ticks_per_step)
+      elsif track_info[:polyphony] == 1
+        # 単音シンセの場合は最初の声部のみ
+        steps = track_info[:steps][0]
+        process_steps_for_midi(seq, midi_track, steps, track_info, channel, ticks_per_step)
+      else
+        # 複数の声部を持つシンセの場合
+        track_info[:voices].each_with_index do |voice, voice_idx|
+          steps = track_info[:steps][voice_idx]
+          process_steps_for_midi(seq, midi_track, steps, track_info, channel, ticks_per_step)
         end
-
-        # ベロシティ
-        velocity = step.velocity || 100
-
-        # ノートオンイベント
-        note_on = MIDI::NoteOn.new(channel, midi_note, velocity)
-        note_on.time_from_start = start_time
-        midi_track.events << note_on
-
-        # ノートオフイベント
-        note_off = MIDI::NoteOff.new(channel, midi_note, 0)
-        note_off.time_from_start = start_time + duration
-        midi_track.events << note_off
       end
 
       # トラックの終了イベント
@@ -654,6 +640,60 @@ class Sequencer
     puts "MIDI file saved: #{filename}"
     sleep 1  # Short pause to display message
     true
+  end
+
+  # MIDIファイル保存用にステップを処理するヘルパーメソッド
+  def process_steps_for_midi(seq, midi_track, steps, track_info, channel, ticks_per_step)
+    last_time = 0  # 前回のタイムスタンプを記録
+
+    # アクティブなステップだけを処理するためにソート
+    active_step_indices = []
+    steps.each_with_index do |step, idx|
+      active_step_indices << idx if step.active
+    end
+
+    puts "  Track: #{track_info[:name]} - Active steps: #{active_step_indices.size}"
+
+    # ステップインデックスでソートして処理
+    active_step_indices.sort.each do |step_idx|
+      step = steps[step_idx]
+
+      # ノートが有効か確認
+      next unless step.note
+
+      # ノートの開始位置（ティック単位）
+      start_time = (step_idx * ticks_per_step).to_i
+
+      # ノートの長さ（ティック単位） - 16分音符の長さ
+      duration = (ticks_per_step * 0.95).to_i
+
+      # MIDI番号への変換
+      midi_note = nil
+      if track_info[:midi_note].nil?
+        # シンセサイザーの場合、ノート名からMIDIノート番号に変換
+        begin
+          note_obj = Note.new.set_by_name(step.note)
+          midi_note = note_obj.midi_note
+          puts "  Step #{step_idx + 1}: Note #{step.note} (MIDI: #{midi_note})"
+        rescue => e
+          puts "Warning: Failed to convert note '#{step.note}': #{e.message}"
+          next
+        end
+      else
+        midi_note = track_info[:midi_note].to_i
+        puts "  Step #{step_idx + 1}: Drum pad #{midi_note}"
+      end
+
+      velocity = step.velocity || 100
+
+      note_on = MIDI::NoteOn.new(channel, midi_note, velocity)
+      note_on.time_from_start = start_time
+      midi_track.events << note_on
+
+      note_off = MIDI::NoteOff.new(channel, midi_note, 0)
+      note_off.time_from_start = start_time + duration
+      midi_track.events << note_off
+    end
   end
 
   def run
