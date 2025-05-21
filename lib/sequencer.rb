@@ -21,6 +21,8 @@ require_relative "presets/hihat_closed"
 require_relative "presets/piano"
 require_relative "sidechain"
 
+require_relative "periodic_cue"
+
 class Sequencer
   attr_reader :tracks, :steps_per_track
 
@@ -443,8 +445,11 @@ class Sequencer
 
     Thread.new do
       step_interval = 60.0 / @bpm / 4
+      cue = PeriodicCue.new(step_interval * 0.8, step_interval * 0.2)
+
       play_position = 0
 
+      cue.start
       while @playing
         @tracks.each do |track_info|
           instrument_index = track_info[:instrument_index]
@@ -488,7 +493,7 @@ class Sequencer
         end
 
         # 少し待ってノートをオフにする
-        sleep step_interval * 0.8
+        cue.sync
 
         # ノートをオフにする
         @tracks.each do |track_info|
@@ -530,7 +535,7 @@ class Sequencer
           end
         end
 
-        sleep step_interval * 0.2
+        cue.sync
 
         play_position = (play_position + 1) % @steps_per_track
       end
