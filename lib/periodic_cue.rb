@@ -1,6 +1,7 @@
 class PeriodicCue
   def initialize(*interval)
     @interval = interval.cycle
+    puts @interval.inspect
     @time = nil
   end
 
