@@ -1,0 +1,40 @@
+# Build directories
+/build/
+/bin/
+
+# PicoRuby vendor directory
+/vendor/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.a
+*.elf
+*.uf2
+*.bin
+*.dis
+*.map
+pioasm
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*~
+
+# macOS files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Ruby files
+*.gem
+*.rbc
+/.config
+/.bundle/
+/vendor/bundle
+/.yardoc/
+/_yardoc/
+/doc/
+/rdoc/

@@ -1,0 +1,99 @@
+require 'rake'
+require 'fileutils'
+
+# 設定
+BUILD_DIR = 'build'
+
+desc 'セットアップとビルドを実行'
+task default: [:setup, :build]
+
+desc '環境セットアップを実行'
+task :setup do
+  puts "セットアップを実行中..."
+  sh 'bash bin/setup'
+  FileUtils.mkdir_p(BUILD_DIR)
+end
+
+desc 'プロジェクトをビルド'
+task :build do
+  puts "ビルドを実行中..."
+  Dir.chdir(BUILD_DIR) do
+    sh 'cmake .. && make -j4'
+  end
+  puts "ビルド完了! UF2ファイルは: #{BUILD_DIR}/pico_sequencer.uf2"
+end
+
+desc 'ビルドディレクトリをクリーン'
+task :clean do
+  puts "ビルドディレクトリをクリーンアップ中..."
+  FileUtils.rm_rf(BUILD_DIR)
+end
+
+desc 'RP2040デバイスにフラッシュ'
+task :flash do
+  puts "RP2040デバイスにフラッシュ中..."
+
+  uf2_path = "#{BUILD_DIR}/pico_sequencer.uf2"
+
+  if File.exist?(uf2_path)
+    if Dir.exist?('/Volumes/RPI-RP2')
+      FileUtils.cp(uf2_path, '/Volumes/RPI-RP2/')
+      puts "フラッシュ完了!"
+    else
+      puts "RP2040デバイスが見つかりません。BOOTSELモードで接続してください。"
+    end
+  else
+    puts "ビルドが見つかりません。まず 'rake build' を実行してください。"
+  end
+end
+
+desc 'ファイル構造を確認'
+task :check_files do
+  puts "ファイル構造を確認中..."
+
+  required_files = [
+    'src/main.rb',
+    'src/main.c',
+    'CMakeLists.txt',
+    'bin/setup',
+  ]
+
+  required_dirs = [
+    'vendor/picoruby',
+  ]
+
+  missing_files = required_files.reject { |f| File.exist?(f) }
+  missing_dirs = required_dirs.reject { |d| Dir.exist?(d) }
+
+  if missing_files.empty? && missing_dirs.empty?
+    puts "すべての必要なファイルが存在します。"
+  else
+    puts "以下のファイルまたはディレクトリが見つかりません:"
+    missing_files.each { |f| puts "  - #{f}" }
+    missing_dirs.each { |d| puts "  - #{d}" }
+    puts "rake setup を実行して必要なファイルを作成してください。"
+  end
+end
+
+desc 'BPMを変更する'
+task :change_bpm, [:bpm] do |t, args|
+  bpm = args[:bpm] || 120
+
+  puts "BPMを#{bpm}に変更中..."
+
+  main_rb = 'src/main.rb'
+
+  if File.exist?(main_rb)
+    content = File.read(main_rb)
+    updated_content = content.gsub(/BPM\s*=\s*\d+/, "BPM = #{bpm}")
+
+    if content != updated_content
+      File.write(main_rb, updated_content)
+      puts "BPMを#{bpm}に更新しました。再ビルドして変更を適用してください。"
+    else
+      puts "BPMは既に#{bpm}に設定されています。"
+    end
+  else
+    puts "src/main.rbが見つかりません。セットアップを実行してください。"
+  end
+end
